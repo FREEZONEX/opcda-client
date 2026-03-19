@@ -4,9 +4,9 @@
   "description": "Node-RED OPC DA Reading and Writing Node",
   "node-red": {
     "nodes": {
-      "opc-read": "opcda/opcda-read.js",
-      "opc-write": "opcda/opcda-write.js",
-      "opc-server": "opcda/opcda-server.js"
+      "tier0-opc-read": "opcda/opcda-read.js",
+      "tier0-opc-write": "opcda/opcda-write.js",
+      "tier0-opc-server": "opcda/opcda-server.js"
     },
     "keywords": [
       "opcda",

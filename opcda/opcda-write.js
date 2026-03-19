@@ -286,5 +286,5 @@ module.exports = function(RED) {
 		});
     }
 	
-    RED.nodes.registerType("opcda-write",OPCDAWrite);
+    RED.nodes.registerType("tier0-opcda-write",OPCDAWrite);
 }

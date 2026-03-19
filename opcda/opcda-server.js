@@ -82,7 +82,7 @@ module.exports = function(RED) {
 		});
 	}
 	
-    RED.nodes.registerType("opcda-server", OPCDAServer, {
+    RED.nodes.registerType("tier0-opcda-server", OPCDAServer, {
 		credentials: {
 			username: {type:"text"},
 			password: {type:"password"}

@@ -1,4 +1,4 @@
-<script type="text/html" data-template-name="opcda-server">
+<script type="text/html" data-template-name="tier0-opcda-server">
 	<div class="form-row">
         <label for="node-config-input-name"><i class="fa fa-tasks"></i> Name</label>
         <input type="text" id="node-config-input-name" placeholder="Name">
@@ -40,12 +40,12 @@
 	</div>
 </script>
 
-<script type="text/html" data-help-name="opcda-server">
-    <p>Opcda Server Node. For more details please visit https://github.com/emrebekar/node-red-contrib-opcda-client</p>
+<script type="text/html" data-help-name="tier0-opcda-server">
+    <p>Opcda Server Node. For more details please visit https://github.com/FREEZONEX/opcda-client</p>
 </script>
 
 <script type="text/javascript">
-    RED.nodes.registerType('opcda-server',{
+    RED.nodes.registerType('tier0-opcda-server',{
         category: 'config',
         defaults: {
 			name: {value: ""},
@@ -59,7 +59,7 @@
 			password: { type: "password", required: true }
 		},
         label: function() {
-            return this.name||"opcda-server";
+            return this.name||"tier0-opcda-server";
         },
 		oneditprepare: function () {
 			let browseBtn = $('#node-config-btn-item-browse');

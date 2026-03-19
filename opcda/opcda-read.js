@@ -346,5 +346,5 @@ module.exports = function(RED) {
 		
     }
 	
-    RED.nodes.registerType("opcda-read",OPCDARead);
+    RED.nodes.registerType("tier0-opcda-read",OPCDARead);
 }
