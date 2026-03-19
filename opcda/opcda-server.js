@@ -24,6 +24,14 @@ module.exports = function(RED) {
 		0x0004000D : "The server does not support the requested data rate but will use the closest available rate.",
 		0x00000061 : "Clsid syntax is invalid"
 	};
+
+	function resolveError(e) {
+		if (errorCode[e]) return errorCode[e];
+		if (typeof e === 'number') return `DCOM error code: 0x${(e >>> 0).toString(16).toUpperCase()}`;
+		if (e instanceof Error) return e.message || e.toString();
+		if (typeof e === 'string') return e;
+		try { return JSON.stringify(e); } catch (_) { return String(e); }
+	}
 	
 	RED.httpAdmin.get('/opcda/browse', RED.auth.needsPermission('node-opc-da.list'), function (req, res) {
         let params = req.query
@@ -52,8 +60,9 @@ module.exports = function(RED) {
 				res.status(200).send({items : itemList});
 			}
 			catch(e){
-				var msg = errorCode[e] ? errorCode[e] : "Unknown error.";
-				RED.log.error(msg);
+				var msg = resolveError(e);
+				RED.log.error(`OPC DA browse error: ${msg}`);
+				RED.log.error(e);
 				res.status(500).send({error : msg});
 			}
 		}

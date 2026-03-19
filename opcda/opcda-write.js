@@ -24,6 +24,14 @@ module.exports = function(RED) {
 		0x0004000D : "The server does not support the requested data rate but will use the closest available rate.",
 		0x00000061 : "Clsid syntax is invalid"
 	};
+
+	function resolveError(e) {
+		if (errorCode[e]) return errorCode[e];
+		if (typeof e === 'number') return `DCOM error code: 0x${(e >>> 0).toString(16).toUpperCase()}`;
+		if (e instanceof Error) return e.message || e.toString();
+		if (typeof e === 'string') return e;
+		try { return JSON.stringify(e); } catch (_) { return String(e); }
+	}
 	
 	const itemTypes = {
 		"double" : opcda.dcom.Types.DOUBLE,
@@ -247,23 +255,18 @@ module.exports = function(RED) {
 			}
 			catch(e){
 				node.isReconnecting = false;
-				if(errorCode[e]){
-					switch(e) {
-						case 0x00000005:
-						case 0xC0040010:
-						case 0x80040154:
-						case 0x00000061:
-							node.error(errorCode[e]);
-							return;
-						default:
-							node.error(errorCode[e]);
-							await node.reconnect();
-					}
+				var msg = resolveError(e);
+				node.updateStatus('error');
+				node.error(`OPC DA connection error: ${msg}`);
+				switch(e) {
+					case 0x00000005:
+					case 0xC0040010:
+					case 0x80040154:
+					case 0x00000061:
+						return;
+					default:
+						await node.reconnect();
 				}
-				else{
-					node.error(e);
-					await node.reconnect();
-				}				
 			}
 		}
 		

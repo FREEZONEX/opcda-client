@@ -1,6 +1,6 @@
 {
-  "name": "node-red-contrib-opcda-client",
-  "version": "0.0.7",
+  "name": "@tier0/node-red-contrib-opcda-client",
+  "version": "1.0.0",
   "description": "Node-RED OPC DA Reading and Writing Node",
   "node-red": {
     "nodes": {
@@ -31,13 +31,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/emrebekar/node-red-contrib-opcda-client.git"
+    "url": "git+https://github.com/FREEZONEX/opcda-client.git"
   },
-  "author": "emrebekar",
+  "author": "FREEZONEX",
   "bugs": {
-    "url": "https://github.com/emrebekar/node-red-contrib-opcda-client/issues"
+    "url": "https://github.com/FREEZONEX/opcda-client/issues"
   },
-  "homepage": "https://github.com/emrebekar/node-red-contrib-opcda-client/blob/master/README.md",
+  "homepage": "https://github.com/FREEZONEX/opcda-client#readme",
   "license": "Apache-2.0",
   "dependencies": {
     "node-opc-da": "^1.0.6"
