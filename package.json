@@ -1,12 +1,12 @@
 {
   "name": "@tier0/node-red-contrib-opcda-client",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Node-RED OPC DA Reading and Writing Node",
   "node-red": {
     "nodes": {
-      "opc-read": "opcda/opcda-read.js",
-      "opc-write": "opcda/opcda-write.js",
-      "opc-server": "opcda/opcda-server.js"
+      "tier0-opcda-read": "opcda/opcda-read.js",
+      "tier0-opcda-write": "opcda/opcda-write.js",
+      "tier0-opcda-server": "opcda/opcda-server.js"
     },
     "keywords": [
       "opcda",
