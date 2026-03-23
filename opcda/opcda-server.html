@@ -50,7 +50,7 @@
         defaults: {
 			name: {value: ""},
             address: {value: "", required: true},
-			domain: {value: "", required: true},
+			domain: {value: ""},
 			clsid: {value: "", required: true},
 			timeout: {value: 5000},
         },
@@ -62,16 +62,41 @@
             return this.name||"tier0-opcda-server";
         },
 		oneditprepare: function () {
+			let self = this;
+			/**
+			 * Admin route RED.httpAdmin.get('/opcda/browse').
+			 * Tier0 + Kong: public path is /nodered/home/... — must NOT request bare /opcda/browse (hits wrong service → HTML 200).
+			 * Node-RED sets RED.settings.apiRootUrl for proxy subpaths; use it first.
+			 */
+			function browseApiUrl() {
+				var api = RED.settings && RED.settings.apiRootUrl;
+				if (api) {
+					var u = String(api);
+					if (!/\/$/.test(u)) {
+						u += '/';
+					}
+					return u + 'tier0-opcda/browse';
+				}
+				var s = RED.settings && RED.settings.httpAdminRoot;
+				if (s != null && String(s).trim() !== '' && String(s) !== '/') {
+					var root = String(s).replace(/\/+$/, '');
+					return (root ? root : '') + '/tier0-opcda/browse';
+				}
+				var p = window.location.pathname || '';
+				p = p.replace(/\/+$/, '');
+				if (p && p !== '/') {
+					return (p + '/tier0-opcda/browse').replace(/\/+/g, '/');
+				}
+				return '/tier0-opcda/browse';
+			}
 			let browseBtn = $('#node-config-btn-item-browse');
 			let browseBtnIcon = browseBtn.children('i');
 			let exportBtn = $('#node-config-btn-item-export');
 			let exportBtnIcon = exportBtn.children('i');
 			let alertArea = $('#node-config-alert');
 			let itemList = $('#node-config-item-list');
-			
-			console.log(this.credentials);
-			
-			$("#node-config-input-timeout").spinner().val(5000);
+
+			$("#node-config-input-timeout").spinner().val(self.timeout != null ? self.timeout : 5000);
 			
 			itemList.hide();
 			alertArea.hide();
@@ -88,6 +113,7 @@
 				exportBtn.addClass('disabled').attr('disabled', 'disabled');
 								
 				var queryData = {
+					id: self.id,
 					address: $('#node-config-input-address').val(),
 					domain: $('#node-config-input-domain').val(),
 					username: $('#node-config-input-username').val(),
@@ -95,23 +121,45 @@
 					clsid: $('#node-config-input-clsid').val(),
 					timeout: $('#node-config-input-timeout').val()
 				};
-				
-				console.log(queryData);
 
-				$.get("opcda/browse", queryData)
-				.done(function( data, status, jqXHR ) {
-					alertArea.text(data.items.length + ' items found');
+				$.ajax({
+					url: browseApiUrl(),
+					method: 'GET',
+					data: queryData,
+					dataType: 'json'
+				})
+				.done(function( data /*, status, jqXHR */ ) {
+					var items = data && data.items;
+					if (!Array.isArray(items)) {
+						alertArea.text('Browse returned an invalid response (expected JSON { items: [...] }). See Node-RED log.');
+						itemList.empty().hide();
+						exportBtn.addClass('disabled').attr('disabled', 'disabled');
+						return;
+					}
+					alertArea.text(items.length + ' items found');
 					itemList.empty();
-					$.each(data.items, function(i, item){
+					$.each(items, function(i, item){
 						$('<li/>').text(item).appendTo(itemList);
 					});
-					
+
 					itemList.show();
 					exportBtn.removeClass('disabled').removeAttr('disabled');
 
 				})
-				.fail(function( jqXHR, status, errorThrown ) {
-					alertArea.text(jqXHR.responseJSON.error);
+				.fail(function( jqXHR, textStatus, errorThrown ) {
+					var errText;
+					if (jqXHR.status === 403) {
+						errText = 'Permission denied. Node-RED 4+: grant role permission "OPC DA: browse address space" (node-opc-da.list), then reload the editor.';
+					} else if (textStatus === 'parsererror') {
+						errText = 'Browse got HTML instead of JSON (wrong path). Tried: ' + browseApiUrl() +
+							'. Open DevTools → Network and confirm this URL returns JSON. Status ' + (jqXHR.status || '?') + '.';
+					} else {
+						errText = (jqXHR.responseJSON && jqXHR.responseJSON.error) ||
+							jqXHR.responseText || errorThrown || textStatus || 'Request failed';
+					}
+					alertArea.text(errText);
+					itemList.empty().hide();
+					exportBtn.addClass('disabled').attr('disabled', 'disabled');
 				})
 				.always(function(){
 					browseBtnIcon.removeClass('fa-spinner fa-spin fa-fw').addClass('fa-search');
@@ -137,7 +185,7 @@
 			});			
 		},
 		oneditsave: function () {
-
+			this.timeout = parseInt($("#node-config-input-timeout").val(), 10) || 5000;
 		}
     });
 </script>

@@ -2,10 +2,12 @@ module.exports = function(RED) {
 	const opcda = require('node-opc-da');
     const { OPCServer } = opcda;
     const { ComServer, Session, Clsid } = opcda.dcom;
-	
+
+	const ACCESS_DENIED_HINT = " Check DOMAIN (Windows PC name for local accounts, e.g. DESKTOP-XXX), password, DCOM rights on the OPC host, and Deploy the server config so Browse uses saved credentials.";
+
 	const errorCode = {
 		0x80040154 : "Clsid is not found.",
-		0x00000005 : "Access denied. Username and/or password might be wrong.",
+		0x00000005 : "Access denied (DCOM)." + ACCESS_DENIED_HINT,
 		0xC0040006 : "The Items AccessRights do not allow the operation.",
 		0xC0040004 : "The server cannot convert the data between the specified format/ requested data type and the canonical data type.",
 		0xC004000C : "Duplicate name not allowed.",
@@ -22,30 +24,101 @@ module.exports = function(RED) {
 		0x0004000E : "A value passed to WRITE was accepted but the output was clamped.",
 		0x0004000F : "The operation cannot be performed because the object is being referenced.",
 		0x0004000D : "The server does not support the requested data rate but will use the closest available rate.",
-		0x00000061 : "Clsid syntax is invalid"
+		0x00000061 : "Clsid syntax is invalid",
+		0x80004002 : "No such interface (E_NOINTERFACE)."
 	};
 
 	function resolveError(e) {
+		if (typeof e === "number") {
+			const u = e >>> 0;
+			if (u === 0x80070005 || e === 5 || e === -2147024891) {
+				return "Access denied (DCOM 0x80070005 / 0x5)." + ACCESS_DENIED_HINT;
+			}
+			if (errorCode[e] !== undefined) return errorCode[e];
+			if (errorCode[u] !== undefined) return errorCode[u];
+			return "HRESULT 0x" + u.toString(16).toUpperCase() + " (" + e + ")";
+		}
+		if (e instanceof Error && e.message) {
+			const asNum = Number(e.message);
+			if (!Number.isNaN(asNum) && String(asNum) === String(e.message).trim()) {
+				return resolveError(asNum);
+			}
+			return e.message;
+		}
 		if (errorCode[e]) return errorCode[e];
-		if (typeof e === 'number') return `DCOM error code: 0x${(e >>> 0).toString(16).toUpperCase()}`;
-		if (e instanceof Error) return e.message || e.toString();
-		if (typeof e === 'string') return e;
-		try { return JSON.stringify(e); } catch (_) { return String(e); }
+		if (typeof e === "string") return e;
+		try {
+			return JSON.stringify(e);
+		} catch (_) {
+			return String(e);
+		}
 	}
-	
-	RED.httpAdmin.get('/opcda/browse', RED.auth.needsPermission('node-opc-da.list'), function (req, res) {
-        let params = req.query
-        async function browseItems() {
-			try{
+
+	/**
+	 * Use deployed tier0-opcda-server credentials when the editor password field is empty.
+	 */
+	function resolveBrowseParams(query) {
+		const params = Object.assign({}, query);
+		// Node-RED puts this in the password field when creds exist but user did not re-type the password.
+		if (params.password === "__PWRD__" || params.password === "__PASSWORD__") {
+			delete params.password;
+		}
+		const id = params.id;
+		if (id) {
+			const srv = RED.nodes.getNode(id);
+			if (srv && srv.credentials) {
+				if (srv.address) params.address = srv.address;
+				if (srv.clsid) params.clsid = srv.clsid;
+				if (srv.timeout != null && srv.timeout !== "") params.timeout = srv.timeout;
+				if (srv.domain != null && String(srv.domain).trim() !== "") {
+					params.domain = String(srv.domain).trim();
+				}
+				if (srv.credentials.username) {
+					params.username = srv.credentials.username;
+				}
+				if (srv.credentials.password) {
+					params.password = srv.credentials.password;
+				}
+			} else if (id) {
+				RED.log.warn("OPC DA browse: config node id not in runtime (Deploy flows?) — using form/query fields only.");
+			}
+		}
+		params.domain = params.domain != null && String(params.domain).trim() !== "" ?
+			String(params.domain).trim() : "";
+		params.username = String(params.username || "").trim();
+		params.password = String(params.password || "");
+		if (params.password === "__PWRD__" || params.password === "__PASSWORD__") {
+			params.password = "";
+		}
+		const t = Number(params.timeout);
+		params.timeout = Number.isFinite(t) && t > 0 ? t : 15000;
+		return params;
+	}
+
+	RED.httpAdmin.get("/tier0-opcda/browse", RED.auth.needsPermission("node-opc-da.list"), function (req, res) {
+		async function browseItems() {
+			const params = resolveBrowseParams(req.query);
+			try {
+				if (!params.address || !params.clsid) {
+					res.status(400).send({error: "Missing address or clsid."});
+					return;
+				}
+				if (!params.username || !params.password) {
+					res.status(400).send({
+						error: "Missing username or password. Deploy flows first (Browse uses stored credentials from the tier0-opcda-server node). If the browser showed password=__PWRD__, that is not a real password — Node-RED only sends the real one after Deploy, or re-type the password in the server config and deploy."
+					});
+					return;
+				}
+
 				var session = new Session();
 				session = session.createSession(params.domain, params.username, params.password);
 				session.setGlobalSocketTimeout(params.timeout);
 
 				var comServer = new ComServer(new Clsid(params.clsid), params.address, session);
 				await comServer.init();
-				
+
 				var comObject = await comServer.createInstance();
-		
+
 				var opcServer = new opcda.OPCServer();
 				await opcServer.init(comObject);
 
@@ -55,20 +128,19 @@ module.exports = function(RED) {
 				opcBrowser.end()
 					.then(() => opcServer.end())
 					.then(() => comServer.closeStub())
-					.catch(e => RED.log.error(`Error closing browse session: ${e}`));
+					.catch((e) => RED.log.error(`Error closing browse session: ${e}`));
 
-				res.status(200).send({items : itemList});
-			}
-			catch(e){
+				res.status(200).send({items: itemList});
+			} catch (e) {
 				var msg = resolveError(e);
 				RED.log.error(`OPC DA browse error: ${msg}`);
-				RED.log.error(e);
-				res.status(500).send({error : msg});
+				if (e && e.stack) RED.log.error(e.stack);
+				res.status(500).send({error: msg});
 			}
 		}
-		
+
 		browseItems();
-    });
+	});
 
     function OPCDAServer(config) {
         RED.nodes.createNode(this,config);

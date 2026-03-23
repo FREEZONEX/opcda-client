@@ -8,6 +8,12 @@
       "tier0-opc-write": "opcda/opcda-write.js",
       "tier0-opc-server": "opcda/opcda-server.js"
     },
+    "permissions": {
+      "node-opc-da.list": {
+        "label": "OPC DA: browse address space",
+        "description": "Call /opcda/browse from the Tier0 OPC DA server config (editor)."
+      }
+    },
     "keywords": [
       "opcda",
       "plc",
@@ -41,5 +47,8 @@
   "license": "Apache-2.0",
   "dependencies": {
     "node-opc-da": "^1.0.6"
+  },
+  "overrides": {
+    "node-dcom": "FREEZONEX/node-dcom"
   }
 }

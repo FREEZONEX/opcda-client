@@ -26,11 +26,35 @@ module.exports = function(RED) {
 	};
 
 	function resolveError(e) {
+		if (typeof e === "number") {
+			const u = e >>> 0;
+			if (errorCode[e] !== undefined) return errorCode[e];
+			if (errorCode[u] !== undefined) return errorCode[u];
+			return "HRESULT 0x" + u.toString(16).toUpperCase() + " (" + e + ")";
+		}
+		if (e instanceof Error && e.message) {
+			const asNum = Number(e.message);
+			if (!Number.isNaN(asNum) && String(asNum) === String(e.message).trim()) {
+				return resolveError(asNum);
+			}
+			return e.message;
+		}
 		if (errorCode[e]) return errorCode[e];
-		if (typeof e === 'number') return `DCOM error code: 0x${(e >>> 0).toString(16).toUpperCase()}`;
-		if (e instanceof Error) return e.message || e.toString();
-		if (typeof e === 'string') return e;
-		try { return JSON.stringify(e); } catch (_) { return String(e); }
+		if (typeof e === "string") return e;
+		try {
+			return JSON.stringify(e);
+		} catch (_) {
+			return String(e);
+		}
+	}
+
+	/** IOPCItemMgt::Add per-item result (may be signed negative in JS). */
+	function describeOpcItemResult(code) {
+		if (code === 0) return "OK";
+		const unsigned = code >>> 0;
+		const fromOpc = opcda.constants.opc.errorDesc[String(unsigned)];
+		if (fromOpc) return fromOpc + " (0x" + unsigned.toString(16).toUpperCase() + ")";
+		return "OPC/DCOM result 0x" + unsigned.toString(16).toUpperCase() + " (" + code + ")";
 	}
 	    
 	function OPCDARead(config) {
@@ -105,9 +129,12 @@ module.exports = function(RED) {
 					try{
 						node.updateStatus('connecting');
 		
-						var timeout = parseInt(server.config.timeout);
+						var timeout = parseInt(server.config.timeout, 10);
+						if (!Number.isFinite(timeout) || timeout <= 0) {
+							timeout = 15000;
+						}
 						var comSession = new Session();
-			
+
 						comSession = comSession.createSession(server.config.domain, server.credentials.username, server.credentials.password);
 						comSession.setGlobalSocketTimeout(timeout);
 		
@@ -144,7 +171,7 @@ module.exports = function(RED) {
 							const item = itemsList[i];
 			
 							if (addedItem[0] !== 0) {
-								node.warn(`Error adding item '${item.itemID}'`);
+								node.warn("Error adding item '" + item.itemID + "': " + describeOpcItemResult(addedItem[0]));
 							} 
 							else {
 								serverHandles.push(addedItem[1].serverHandle);
