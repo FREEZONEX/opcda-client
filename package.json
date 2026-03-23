@@ -1,12 +1,12 @@
 {
-  "name": "node-red-contrib-opcda-client",
-  "version": "0.0.7",
+  "name": "@tier0/node-red-contrib-opcda-client",
+  "version": "1.0.5",
   "description": "Node-RED OPC DA Reading and Writing Node",
   "node-red": {
     "nodes": {
-      "opc-read": "opcda/opcda-read.js",
-      "opc-write": "opcda/opcda-write.js",
-      "opc-server": "opcda/opcda-server.js"
+      "tier0-opcda-read": "opcda/opcda-read.js",
+      "tier0-opcda-write": "opcda/opcda-write.js",
+      "tier0-opcda-server": "opcda/opcda-server.js"
     },
     "keywords": [
       "opcda",
@@ -31,15 +31,18 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/emrebekar/node-red-contrib-opcda-client.git"
+    "url": "git+https://github.com/FREEZONEX/opcda-client.git"
   },
-  "author": "emrebekar",
+  "author": "FREEZONEX (forked from emrebekar)",
   "bugs": {
-    "url": "https://github.com/emrebekar/node-red-contrib-opcda-client/issues"
+    "url": "https://github.com/FREEZONEX/opcda-client/issues"
   },
-  "homepage": "https://github.com/emrebekar/node-red-contrib-opcda-client/blob/master/README.md",
+  "homepage": "https://github.com/FREEZONEX/opcda-client#readme",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "node-opc-da": "^1.0.6"
+    "@tier0/node-opc-da": "^1.0.8"
   }
 }

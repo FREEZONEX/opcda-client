@@ -1,4 +1,4 @@
-<script type="text/html" data-template-name="opcda-write">
+<script type="text/html" data-template-name="tier0-opcda-write">
     <div class="form-row">
         <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
         <input type="text" id="node-input-name" placeholder="Name">
@@ -9,16 +9,16 @@
     </div>
 </script>
 
-<script type="text/html" data-help-name="opcda-write">
+<script type="text/html" data-help-name="tier0-opcda-write">
     <p>Opcda Write Node. For more details please visit https://github.com/emrebekar/node-red-contrib-opcda-client</p>
 </script>
 
 <script type="text/javascript">
-    RED.nodes.registerType('opcda-write',{
+    RED.nodes.registerType('tier0-opcda-write',{
         category: 'opcda',
         color: '#a6bbcf',
         defaults: {
-			server: {value: "", type: "opcda-server", required: true},
+			server: {value: "", type: "tier0-opcda-server", required: true},
             name: {value: ""},
         },
         inputs:1,
@@ -26,7 +26,7 @@
         icon: "serial.png",
 		align: 'right',
         label: function() {
-            return this.name||this._("opcda-write");
+            return this.name||this._("tier0-opcda-write");
         }
     });
 </script>

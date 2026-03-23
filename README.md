@@ -1,4 +1,7 @@
-# node-red-contrib-opcda-client
+# @tier0/node-red-contrib-opcda-client
+
+> **Fork Note:** This is a fork of the original `node-red-contrib-opcda-client` package. 
+> This version introduces **full NTLMv2 authentication support** and packet signing for modern Windows DCOM environments, utilizing a custom-built [`FREEZONEX/node-dcom`](https://github.com/FREEZONEX/node-dcom) fork. It also resolves `/opcda/browse` route conflicts with the original package.
 
 This node can be used in order to read and write to OPC DA servers.
 

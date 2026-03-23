@@ -1,5 +1,5 @@
 module.exports = function(RED) {
-	const opcda = require('node-opc-da');
+	const opcda = require('@tier0/node-opc-da');
 	const { OPCServer } = opcda;
     const { ComServer, Session, Clsid } = opcda.dcom;
 	
@@ -344,5 +344,5 @@ module.exports = function(RED) {
 		
     }
 	
-    RED.nodes.registerType("opcda-read",OPCDARead);
+    RED.nodes.registerType("tier0-opcda-read",OPCDARead);
 }

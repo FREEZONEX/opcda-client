@@ -1,5 +1,5 @@
 module.exports = function(RED) {
-	const opcda = require('node-opc-da');
+	const opcda = require('@tier0/node-opc-da');
     const { OPCServer } = opcda;
     const { ComServer, Session, Clsid } = opcda.dcom;
 	
@@ -22,22 +22,89 @@ module.exports = function(RED) {
 		0x0004000E : "A value passed to WRITE was accepted but the output was clamped.",
 		0x0004000F : "The operation cannot be performed because the object is being referenced.",
 		0x0004000D : "The server does not support the requested data rate but will use the closest available rate.",
-		0x00000061 : "Clsid syntax is invalid"
+		0x00000061 : "Clsid syntax is invalid",
+		0x80004002 : "No such interface (E_NOINTERFACE).",
+		2147500034 : "No such interface (E_NOINTERFACE)."
 	};
-	
+
+	function formatBrowseError(err) {
+		if (typeof err === "number") {
+			const u = err >>> 0;
+			if (errorCode[err] !== undefined) return errorCode[err];
+			if (errorCode[u] !== undefined) return errorCode[u];
+			return "HRESULT 0x" + u.toString(16) + " (" + err + ")";
+		}
+		if (err && err.message) {
+			const asNum = Number(err.message);
+			if (!Number.isNaN(asNum) && String(asNum) === String(err.message).trim()) {
+				return formatBrowseError(asNum);
+			}
+			return err.message;
+		}
+		return String(err || "Unknown error.");
+	}
+
+	/**
+	 * Merge query params with deployed opcda-server config node so Browse works when
+	 * the password field is empty in the editor (Node-RED never fills stored passwords).
+	 */
+	function resolveBrowseParams(query) {
+		const params = Object.assign({}, query);
+		if (params.password === "__PWRD__" || params.password === "__PASSWORD__") {
+			delete params.password;
+		}
+		const id = params.id;
+		if (id) {
+			const srv = RED.nodes.getNode(id);
+			if (srv && srv.credentials) {
+				if (srv.domain != null && String(srv.domain).trim() !== "") {
+					params.domain = String(srv.domain).trim();
+				}
+				if (srv.address) params.address = srv.address;
+				if (srv.clsid) params.clsid = srv.clsid;
+				if (srv.timeout != null && srv.timeout !== "") params.timeout = srv.timeout;
+				if (srv.credentials.username) params.username = srv.credentials.username;
+				if (srv.credentials.password) params.password = srv.credentials.password;
+			} else if (id) {
+				RED.log.warn("OPC DA browse: config node id not in runtime (Deploy flows?) — using form/query fields only.");
+			}
+		}
+		params.domain = params.domain != null && String(params.domain).trim() !== "" ?
+			String(params.domain).trim() : "";
+		params.username = String(params.username || "").trim();
+		params.password = String(params.password || "");
+		if (params.password === "__PWRD__" || params.password === "__PASSWORD__") {
+			params.password = "";
+		}
+		const t = Number(params.timeout);
+		params.timeout = Number.isFinite(t) && t > 0 ? t : 15000;
+		return params;
+	}
+
 	RED.httpAdmin.get('/opcda/browse', RED.auth.needsPermission('node-opc-da.list'), function (req, res) {
-        let params = req.query
-        async function browseItems() {
-			try{
+		async function browseItems() {
+			const params = resolveBrowseParams(req.query);
+			try {
+				if (!params.address || !params.clsid) {
+					res.status(400).send({error: "Missing address or clsid."});
+					return;
+				}
+				if (!params.username || !params.password) {
+					res.status(400).send({
+						error: "Missing username or password. Deploy flows first (Browse uses stored credentials from the opcda-server node). If the URL showed password=__PWRD__, that is not a real password — deploy or re-type the password in the server config."
+					});
+					return;
+				}
+
 				var session = new Session();
 				session = session.createSession(params.domain, params.username, params.password);
 				session.setGlobalSocketTimeout(params.timeout);
 
 				var comServer = new ComServer(new Clsid(params.clsid), params.address, session);
 				await comServer.init();
-				
+
 				var comObject = await comServer.createInstance();
-		
+
 				var opcServer = new opcda.OPCServer();
 				await opcServer.init(comObject);
 
@@ -49,17 +116,17 @@ module.exports = function(RED) {
 					.then(() => comServer.closeStub())
 					.catch(e => RED.log.error(`Error closing browse session: ${e}`));
 
-				res.status(200).send({items : itemList});
-			}
-			catch(e){
-				var msg = errorCode[e] ? errorCode[e] : "Unknown error.";
-				RED.log.error(msg);
-				res.status(500).send({error : msg});
+				res.status(200).send({items: itemList});
+			} catch (e) {
+				const msg = formatBrowseError(e);
+				RED.log.error(`OPC DA browse: ${msg}`);
+				if (e && e.stack) RED.log.error(e.stack);
+				res.status(500).send({error: msg});
 			}
 		}
-		
+
 		browseItems();
-    });
+	});
 
     function OPCDAServer(config) {
         RED.nodes.createNode(this,config);
@@ -73,7 +140,7 @@ module.exports = function(RED) {
 		});
 	}
 	
-    RED.nodes.registerType("opcda-server", OPCDAServer, {
+    RED.nodes.registerType("tier0-opcda-server", OPCDAServer, {
 		credentials: {
 			username: {type:"text"},
 			password: {type:"password"}
