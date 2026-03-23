@@ -1,6 +1,6 @@
 {
   "name": "@tier0/node-red-contrib-opcda-client",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Node-RED OPC DA Reading and Writing Node",
   "node-red": {
     "nodes": {
@@ -43,6 +43,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@tier0/node-opc-da": "^1.0.8"
+    "@tier0/node-dcom": "1.2.1",
+    "@tier0/node-opc-da": "1.0.9"
   }
 }
