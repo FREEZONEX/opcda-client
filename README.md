@@ -1,20 +1,13 @@
 # @tier0/node-red-contrib-opcda-client
 
-Node-RED nodes for reading and writing to OPC DA servers via DCOM.
+> **Fork Note:** This is a fork of the original `node-red-contrib-opcda-client` package. 
+> This version introduces **full NTLMv2 authentication support** and packet signing for modern Windows DCOM environments, utilizing a custom-built [`FREEZONEX/node-dcom`](https://github.com/FREEZONEX/node-dcom) fork. It also resolves `/opcda/browse` route conflicts with the original package.
 
-Forked from [node-red-contrib-opcda-client](https://github.com/emrebekar/node-red-contrib-opcda-client) by emrebekar.
+This node can be used in order to read and write to OPC DA servers.
 
-## Installation
-
-```bash
-npm install @tier0/node-red-contrib-opcda-client
-```
-
-## Nodes
-
-- **opcda-server** -- Connection configuration for an OPC DA server
-- **opcda-read** -- Read tags from an OPC DA server
-- **opcda-write** -- Write values to an OPC DA server
+- opcda-server
+- opcda-read
+- opcda-write
 
 ## Input Parameters
 ### opcda-server
@@ -80,10 +73,10 @@ set msg.payload parameter with the following;
 #### Screenshots
 
 ##### opcda-server
-![opcda-server](https://raw.githubusercontent.com/FREEZONEX/opcda-client/main/images/opcda_server.png)
+![opcda-server](https://raw.githubusercontent.com/emrebekar/node-red-contrib-opcda-client/master/images/opcda_server.png)
 
 ##### opcda-read
-![opcda-read](https://raw.githubusercontent.com/FREEZONEX/opcda-client/main/images/opcda_read.png)
+![opcda-read](https://raw.githubusercontent.com/emrebekar/node-red-contrib-opcda-client/master/images/opcda_read.png)
 
 ##### opcda-write
-![opcda-write](https://raw.githubusercontent.com/FREEZONEX/opcda-client/main/images/opcda_write.png)
+![opcda-write](https://raw.githubusercontent.com/emrebekar/node-red-contrib-opcda-client/master/images/opcda_write.png)
