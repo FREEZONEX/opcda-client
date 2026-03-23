@@ -1,0 +1,204 @@
+{
+  "UNS": [
+    {
+      "type": "path", 
+      "name": "opcda", 
+      "children": [
+        {
+          "type": "path", 
+          "name": "通道_1", 
+          "children": [
+            {
+              "type": "path", 
+              "name": "设备_1", 
+              "children": [
+                {
+                  "dataType": "METRIC", 
+                  "displayName": "Metric", 
+                  "type": "path", 
+                  "name": "Metric", 
+                  "children": [
+                    {
+                      "topicType": "METRIC", 
+                      "generateDashboard": "TRUE", 
+                      "writeData": "FALSE", 
+                      "name": "标记_1", 
+                      "enableHistory": "TRUE", 
+                      "dataType": "TIME_SEQUENCE_TYPE", 
+                      "fields": [
+                        {
+                          "systemField": true, 
+                          "unique": true, 
+                          "type": "DATETIME", 
+                          "name": "timeStamp"
+                        }, 
+                        {
+                          "tbValueName": "tag", 
+                          "systemField": true, 
+                          "unique": true, 
+                          "type": "LONG", 
+                          "name": "tag"
+                        }, 
+                        {
+                          "index": "double_1", 
+                          "type": "FLOAT", 
+                          "name": "value"
+                        }, 
+                        {
+                          "systemField": true, 
+                          "type": "LONG", 
+                          "name": "quality"
+                        }
+                      ], 
+                      "type": "topic", 
+                      "mockData": "FALSE"
+                    }, 
+                    {
+                      "topicType": "METRIC", 
+                      "generateDashboard": "TRUE", 
+                      "writeData": "FALSE", 
+                      "name": "标记_2", 
+                      "enableHistory": "TRUE", 
+                      "dataType": "TIME_SEQUENCE_TYPE", 
+                      "fields": [
+                        {
+                          "systemField": true, 
+                          "unique": true, 
+                          "type": "DATETIME", 
+                          "name": "timeStamp"
+                        }, 
+                        {
+                          "tbValueName": "tag", 
+                          "systemField": true, 
+                          "unique": true, 
+                          "type": "LONG", 
+                          "name": "tag"
+                        }, 
+                        {
+                          "index": "double_1", 
+                          "type": "FLOAT", 
+                          "name": "value"
+                        }, 
+                        {
+                          "systemField": true, 
+                          "type": "LONG", 
+                          "name": "quality"
+                        }
+                      ], 
+                      "type": "topic", 
+                      "mockData": "FALSE"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }, 
+        {
+          "type": "path", 
+          "name": "模拟器示例", 
+          "children": [
+            {
+              "type": "path", 
+              "name": "功能", 
+              "children": [
+                {
+                  "dataType": "METRIC", 
+                  "displayName": "Metric", 
+                  "type": "path", 
+                  "name": "Metric", 
+                  "children": [
+                    {
+                      "topicType": "METRIC", 
+                      "generateDashboard": "TRUE", 
+                      "writeData": "FALSE", 
+                      "name": "Sine1", 
+                      "enableHistory": "TRUE", 
+                      "dataType": "TIME_SEQUENCE_TYPE", 
+                      "fields": [
+                        {
+                          "systemField": true, 
+                          "unique": true, 
+                          "type": "DATETIME", 
+                          "name": "timeStamp"
+                        }, 
+                        {
+                          "tbValueName": "tag", 
+                          "systemField": true, 
+                          "unique": true, 
+                          "type": "LONG", 
+                          "name": "tag"
+                        }, 
+                        {
+                          "index": "double_1", 
+                          "type": "FLOAT", 
+                          "name": "value"
+                        }, 
+                        {
+                          "systemField": true, 
+                          "type": "LONG", 
+                          "name": "quality"
+                        }
+                      ], 
+                      "type": "topic", 
+                      "mockData": "FALSE"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }, 
+        {
+          "type": "path", 
+          "name": "_System", 
+          "children": [
+            {
+              "dataType": "METRIC", 
+              "displayName": "Metric", 
+              "type": "path", 
+              "name": "Metric", 
+              "children": [
+                {
+                  "topicType": "METRIC", 
+                  "generateDashboard": "TRUE", 
+                  "writeData": "FALSE", 
+                  "name": "_Time", 
+                  "enableHistory": "TRUE", 
+                  "dataType": "TIME_SEQUENCE_TYPE", 
+                  "fields": [
+                    {
+                      "systemField": true, 
+                      "unique": true, 
+                      "type": "DATETIME", 
+                      "name": "timeStamp"
+                    }, 
+                    {
+                      "tbValueName": "tag", 
+                      "systemField": true, 
+                      "unique": true, 
+                      "type": "LONG", 
+                      "name": "tag"
+                    }, 
+                    {
+                      "index": "double_1", 
+                      "type": "FLOAT", 
+                      "name": "value"
+                    }, 
+                    {
+                      "systemField": true, 
+                      "type": "LONG", 
+                      "name": "quality"
+                    }
+                  ], 
+                  "type": "topic", 
+                  "mockData": "FALSE"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
