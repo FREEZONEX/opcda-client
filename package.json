@@ -43,8 +43,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@tier0/node-dcom": "file:../node-dcom/tier0-node-dcom-1.2.3.tgz",
-    "@tier0/node-opc-da": "file:../node-opc-da/tier0-node-opc-da-1.0.11.tgz"
+    "@tier0/node-dcom": "1.2.3",
+    "@tier0/node-opc-da": "1.0.11"
   },
   "bundledDependencies": [
     "babel-runtime",
