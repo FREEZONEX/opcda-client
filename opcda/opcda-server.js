@@ -2,6 +2,7 @@ module.exports = function(RED) {
 	const opcda = require('@tier0/node-opc-da');
     const { OPCServer } = opcda;
     const { ComServer, Session, Clsid } = opcda.dcom;
+	const { cleanupStep, errorCodeOf, messageOf } = require('./lifecycle');
 	
 	const errorCode = {
 		0x80040154 : "Clsid is not found.",
@@ -24,24 +25,19 @@ module.exports = function(RED) {
 		0x0004000D : "The server does not support the requested data rate but will use the closest available rate.",
 		0x00000061 : "Clsid syntax is invalid",
 		0x80004002 : "No such interface (E_NOINTERFACE).",
-		2147500034 : "No such interface (E_NOINTERFACE)."
+		2147500034 : "No such interface (E_NOINTERFACE).",
+		0x1C00001B : "RPC server out of memory/resources (nca_s_fault_remote_no_memory)."
 	};
 
 	function formatBrowseError(err) {
-		if (typeof err === "number") {
-			const u = err >>> 0;
-			if (errorCode[err] !== undefined) return errorCode[err];
-			if (errorCode[u] !== undefined) return errorCode[u];
-			return "HRESULT 0x" + u.toString(16) + " (" + err + ")";
+		const code = errorCodeOf(err);
+		if (code != null && errorCode[code] !== undefined) {
+			return `${errorCode[code]} [0x${code.toString(16)}]`;
 		}
-		if (err && err.message) {
-			const asNum = Number(err.message);
-			if (!Number.isNaN(asNum) && String(asNum) === String(err.message).trim()) {
-				return formatBrowseError(asNum);
-			}
-			return err.message;
+		if (code != null) {
+			return `HRESULT 0x${code.toString(16)} (${code})`;
 		}
-		return String(err || "Unknown error.");
+		return messageOf(err);
 	}
 
 	/**
@@ -81,9 +77,16 @@ module.exports = function(RED) {
 		return params;
 	}
 
-	RED.httpAdmin.get('/opcda/browse', RED.auth.needsPermission('node-opc-da.list'), function (req, res) {
+		RED.httpAdmin.get('/opcda/browse', RED.auth.needsPermission('node-opc-da.list'), function (req, res) {
 		async function browseItems() {
 			const params = resolveBrowseParams(req.query);
+			let session = null;
+			let comServer = null;
+			let comObject = null;
+			let opcServer = null;
+			let opcBrowser = null;
+			let responseStatus = 200;
+			let responseBody;
 			try {
 				if (!params.address || !params.clsid) {
 					res.status(400).send({error: "Missing address or clsid."});
@@ -96,33 +99,51 @@ module.exports = function(RED) {
 					return;
 				}
 
-				var session = new Session();
+				session = new Session();
 				session = session.createSession(params.domain, params.username, params.password);
 				session.setGlobalSocketTimeout(params.timeout);
 
-				var comServer = new ComServer(new Clsid(params.clsid), params.address, session);
+				comServer = new ComServer(new Clsid(params.clsid), params.address, session);
 				await comServer.init();
 
-				var comObject = await comServer.createInstance();
+				comObject = await comServer.createInstance();
 
-				var opcServer = new opcda.OPCServer();
+				opcServer = new opcda.OPCServer();
 				await opcServer.init(comObject);
 
-				var opcBrowser = await opcServer.getBrowser();
-				var itemList = await opcBrowser.browseAllFlat();
-
-				opcBrowser.end()
-					.then(() => opcServer.end())
-					.then(() => comServer.closeStub())
-					.catch(e => RED.log.error(`Error closing browse session: ${e}`));
-
-				res.status(200).send({items: itemList});
+				opcBrowser = await opcServer.getBrowser();
+				const itemList = await opcBrowser.browseAllFlat();
+				responseBody = {items: itemList};
 			} catch (e) {
 				const msg = formatBrowseError(e);
 				RED.log.error(`OPC DA browse: ${msg}`);
 				if (e && e.stack) RED.log.error(e.stack);
-				res.status(500).send({error: msg});
+				responseStatus = 500;
+				responseBody = {error: msg};
+			} finally {
+				const cleanupTimeout = Math.min(Math.max(params.timeout, 1000), 10000);
+				if (opcBrowser) {
+					await cleanupStep(RED.log, 'release Browse enumerator',
+						() => opcBrowser.end(), cleanupTimeout);
+				}
+				if (opcServer) {
+					await cleanupStep(RED.log, 'release Browse OPC server',
+						() => opcServer.end(), cleanupTimeout);
+				}
+				if (comObject && typeof comObject.release === 'function') {
+					await cleanupStep(RED.log, 'release Browse COM object',
+						() => comObject.release(), cleanupTimeout);
+				}
+				if (session && typeof session.destroySession === 'function') {
+					await cleanupStep(RED.log, 'destroy Browse DCOM session',
+						() => session.destroySession(session), cleanupTimeout);
+				}
+				if (comServer) {
+					await cleanupStep(RED.log, 'close Browse DCOM transport',
+						() => comServer.closeStub(), cleanupTimeout);
+				}
 			}
+			if (!res.headersSent) res.status(responseStatus).send(responseBody);
 		}
 
 		browseItems();
@@ -133,6 +154,11 @@ module.exports = function(RED) {
         const node = this;
 		
 		node.config = config;
+		node.address = config.address;
+		node.domain = config.domain;
+		node.clsid = config.clsid;
+		node.timeout = config.timeout;
+		node.reconnectinterval = config.reconnectinterval;
 
 		
 		node.on('close', function(done){
