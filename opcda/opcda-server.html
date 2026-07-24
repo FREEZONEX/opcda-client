@@ -29,6 +29,13 @@
 			<input type="text" id="node-config-input-timeout" style="width: 60px;" placeholder="5000"> <span>ms</span>
 		</div>
 	</div>
+	<div class="form-row">
+		<div style="display:inline">
+			<label for="node-config-input-reconnectinterval"><i class="fa fa-clock-o"></i> Reconnect cooldown</label>
+			<input type="text" id="node-config-input-reconnectinterval" style="width: 60px;" placeholder="5">
+			<span>minutes (after 3 resource errors)</span>
+		</div>
+	</div>
 
 	<div class="form-row">
 		<button class="editor-button" id="node-config-btn-item-browse"><i class="fa fa-search"></i> Browse</button>
@@ -53,6 +60,11 @@
 			domain: {value: "", required: true},
 			clsid: {value: "", required: true},
 			timeout: {value: 5000},
+			reconnectinterval: {
+				value: 5,
+				required: true,
+				validate: RED.validators.number()
+			},
         },
 		credentials: {
 			username: { type: "text", required: true },
@@ -88,6 +100,9 @@
 			let itemList = $('#node-config-item-list');
 
 			$("#node-config-input-timeout").spinner().val(self.timeout != null ? self.timeout : 5000);
+			$("#node-config-input-reconnectinterval").spinner({
+				min: 1
+			}).val(self.reconnectinterval != null ? self.reconnectinterval : 5);
 			
 			itemList.hide();
 			alertArea.hide();
@@ -177,6 +192,8 @@
 		},
 		oneditsave: function () {
 			this.timeout = parseInt($("#node-config-input-timeout").val(), 10) || 5000;
+			this.reconnectinterval =
+				parseFloat($("#node-config-input-reconnectinterval").val()) || 5;
 		}
     });
 </script>

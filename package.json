@@ -1,6 +1,6 @@
 {
   "name": "@tier0/node-red-contrib-opcda-client",
-  "version": "1.0.8",
+  "version": "1.0.29",
   "description": "Node-RED OPC DA Reading and Writing Node",
   "node-red": {
     "nodes": {
@@ -39,12 +39,15 @@
   },
   "homepage": "https://github.com/FREEZONEX/opcda-client#readme",
   "license": "Apache-2.0",
+  "scripts": {
+    "test": "node --test"
+  },
   "publishConfig": {
     "access": "public"
   },
   "dependencies": {
-    "@tier0/node-dcom": "1.2.3",
-    "@tier0/node-opc-da": "1.0.11"
+    "@tier0/node-dcom": "1.2.18",
+    "@tier0/node-opc-da": "1.0.13"
   },
   "bundledDependencies": [
     "babel-runtime",

@@ -2,6 +2,12 @@ module.exports = function(RED) {
 	const opcda = require('@tier0/node-opc-da');
 	const { OPCServer } = opcda;
     const { ComServer, Session, Clsid, ComString} = opcda.dcom;
+	const {
+		cleanupStep,
+		createReconnectController,
+		messageOf,
+		withTimeout,
+	} = require('./lifecycle');
 	
 	const errorCode = {
 		0x80040154 : "Clsid is not found.",
@@ -50,6 +56,10 @@ module.exports = function(RED) {
 		node.opcItemMgr = null;
 		node.opcSyncIO = null;
 		node.opcGroup = null;
+		node.opcServer = null;
+		node.comServer = null;
+		node.comSession = null;
+		node.comObject = null;
 
 		let clientHandle = 0;
 
@@ -85,6 +95,15 @@ module.exports = function(RED) {
 				case "error":
 					node.status({fill:"red",shape:"ring",text:"Error"});
 					break;
+				case "reconnecting":
+					node.status({fill:"yellow",shape:"ring",text:"Reconnecting"});
+					break;
+				case "cooldown":
+					node.status({fill:"yellow",shape:"dot",text:"Resource cooldown"});
+					break;
+				case "stopped":
+					node.status({fill:"red",shape:"dot",text:"Reconnect stopped"});
+					break;
 				case "mismatch":
 					node.status({fill:"yellow",shape:"ring",text:"Mismatch"});
 					break;
@@ -94,86 +113,113 @@ module.exports = function(RED) {
 			}
 		}	
 
-		node.init = function(){
-			return new Promise(async function(resolve, reject){
-				if(!node.isConnected){
+		node.init = async function(){
+			if (node.isConnected) return;
 
-					try{
-						node.updateStatus('connecting');
-						var timeout = parseInt(server.config.timeout);
-						var comSession = new Session();
-						comSession = comSession.createSession(server.config.domain, server.credentials.username, server.credentials.password);
-						comSession.setGlobalSocketTimeout(timeout);
-	
-						node.tout = setTimeout(function(){
-							node.updateStatus("timeout");
-							reject("Connection Timeout");
-						}, timeout);
-			
-						node.comServer = new ComServer(new Clsid(server.config.clsid), server.config.address, comSession);	
-						await node.comServer.init();
-			
-						var comObject = await node.comServer.createInstance();
-						node.opcServer = new OPCServer();
-						await node.opcServer.init(comObject);
-	
-						clearTimeout(node.tout);
-				
-						serverHandles = [];
-						clientHandles = [];
-						node.opcGroup = await node.opcServer.addGroup(config.id, null);				
-						node.opcItemMgr = await node.opcGroup.getItemManager();
-						node.opcSyncIO = await node.opcGroup.getSyncIO();
-		
-						node.isConnected = true;
-	
-						node.updateStatus('ready');
-	
-						resolve();
-					}
-					catch(e){
-						reject(e);
-					}	
+			const configuredTimeout = Number.parseInt(server.config.timeout, 10);
+			const timeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ?
+				configuredTimeout : 15000;
+			node.updateStatus('connecting');
+
+			try {
+				node.comSession = new Session().createSession(
+					server.config.domain,
+					server.credentials.username,
+					server.credentials.password,
+				);
+				node.comSession.setGlobalSocketTimeout(timeout);
+
+				await withTimeout(async () => {
+					node.comServer = new ComServer(
+						new Clsid(server.config.clsid),
+						server.config.address,
+						node.comSession,
+					);
+					await node.comServer.init();
+					node.comObject = await node.comServer.createInstance();
+					node.opcServer = new OPCServer();
+					await node.opcServer.init(node.comObject);
+					serverHandles = {};
+					clientHandle = 0;
+					node.opcGroup = await node.opcServer.addGroup(config.id, null);
+					node.opcItemMgr = await node.opcGroup.getItemManager();
+					node.opcSyncIO = await node.opcGroup.getSyncIO();
+				}, timeout, 'OPCDA write init');
+
+				node.isConnected = true;
+				node.updateStatus('ready');
+				if (node.comServer && typeof node.comServer.once === 'function') {
+					node.comServer.once('disconnected', () => {
+						node.isConnected = false;
+						node.updateStatus('disconnected');
+						node.reconnectController.reconnect(
+							new Error('DCOM transport disconnected'),
+							'disconnect',
+						);
+					});
 				}
-			});
+			} catch (error) {
+				await node.destroy();
+				throw error;
+			}
 		}
 	
-		node.destroy = function(){
-			return new Promise(async function(resolve){
-				try{
-					node.isConnected = false;
+		node.destroy = async function(){
+			node.isConnected = false;
+			node.isWriting = false;
+			const refs = {
+				opcSyncIO: node.opcSyncIO,
+				opcItemMgr: node.opcItemMgr,
+				opcGroup: node.opcGroup,
+				opcServer: node.opcServer,
+				comServer: node.comServer,
+				comSession: node.comSession,
+				comObject: node.comObject,
+			};
+			node.opcSyncIO = null;
+			node.opcItemMgr = null;
+			node.opcGroup = null;
+			node.opcServer = null;
+			node.comServer = null;
+			node.comSession = null;
+			node.comObject = null;
+			serverHandles = {};
+			clientHandle = 0;
 
-					if (node.opcSyncIO) {
-						await node.opcSyncIO.end();
-						node.opcSyncIO = null;
-					}
-					
-					if (node.opcItemMgr) {
-						await node.opcItemMgr.end();
-						node.opcItemMgr = null;
-					}
-					
-					if (node.opcGroup) {
-						await node.opcGroup.end();
-						node.opcGroup = null;
-					}
-		
-					if(node.opcServer){
-						node.opcServer.end();
-						node.opcServer = null;
-					}
-		
-					if(node.comServer){
-						node.comServer.closeStub();
-						node.comServer = null;
-					}
-		
-					resolve();
-				}
-				catch(e){
-					reject(e);
-				}
-			});
+			const cleanupTimeout = 5000;
+			if (refs.opcServer && refs.opcGroup &&
+				typeof refs.opcServer.removeGroup === 'function') {
+				await cleanupStep(node, 'remove OPC write group',
+					() => refs.opcServer.removeGroup(refs.opcGroup, true), cleanupTimeout);
+			}
+			if (refs.opcSyncIO) {
+				await cleanupStep(node, 'release write SyncIO',
+					() => refs.opcSyncIO.end(), cleanupTimeout);
+			}
+			if (refs.opcItemMgr) {
+				await cleanupStep(node, 'release write ItemManager',
+					() => refs.opcItemMgr.end(), cleanupTimeout);
+			}
+			if (refs.opcGroup) {
+				await cleanupStep(node, 'release OPC write group',
+					() => refs.opcGroup.end(), cleanupTimeout);
+			}
+			if (refs.opcServer) {
+				await cleanupStep(node, 'release OPC write server',
+					() => refs.opcServer.end(), cleanupTimeout);
+			}
+			if (refs.comObject && typeof refs.comObject.release === 'function') {
+				await cleanupStep(node, 'release write root COM object',
+					() => refs.comObject.release(), cleanupTimeout);
+			}
+			if (refs.comSession && typeof refs.comSession.destroySession === 'function') {
+				await cleanupStep(node, 'destroy write DCOM session',
+					() => refs.comSession.destroySession(refs.comSession), cleanupTimeout);
+			}
+			if (refs.comServer) {
+				await cleanupStep(node, 'close write DCOM transport',
+					() => refs.comServer.closeStub(), cleanupTimeout);
+			}
 		}
 		
 		async function writeGroup(itemValues){
@@ -183,7 +229,7 @@ module.exports = function(RED) {
 				node.updateStatus("writing");
 				
 				var objects = [];
-				for(itemValue of itemValues){
+				for(const itemValue of itemValues){
 					if(!(itemValue.itemID in serverHandles)){
 						clientHandle++;
 						var item = [{itemID: itemValue.itemID, clientHandle: clientHandle}];
@@ -213,12 +259,12 @@ module.exports = function(RED) {
 				node.send(msg);	
 				
 				node.updateStatus("ready");
+				node.reconnectController.markHealthy();
 			}
 			catch(e){
-				node.error("opcda-error", e.message);
+				node.isConnected = false;
 				node.updateStatus('error');
-
-				node.reconnect();
+				node.reconnectController.reconnect(e, 'write');
 
 				var msg = { payload: false };
 				node.send(msg);	
@@ -228,56 +274,28 @@ module.exports = function(RED) {
 			}
 		}
 
-		node.isReconnecting = false;
-		node.reconnect = async function(){
-			try{
-				if(!node.isReconnecting){
-					node.isReconnecting = true;
-					await node.destroy();
-					await new Promise(resolve => setTimeout(resolve, 3000));
-					await node.init();
-					node.isReconnecting = false;
-				}
-
-				node.comServer.on('disconnected',async function(){
-					node.isConnected = false;
-					node.updateStatus('disconnected');
-					await node.reconnect();
-				});
-			}
-			catch(e){
-				node.isReconnecting = false;
-				if(errorCode[e]){
-					switch(e) {
-						case 0x00000005:
-						case 0xC0040010:
-						case 0x80040154:
-						case 0x00000061:
-							node.error(errorCode[e]);
-							return;
-						default:
-							node.error(errorCode[e]);
-							await node.reconnect();
-					}
-				}
-				else{
-					node.error(e);
-					await node.reconnect();
-				}				
-			}
-		}
-		
-		node.reconnect();
+		node.reconnectController = createReconnectController({
+			node,
+			connect: node.init,
+			destroy: node.destroy,
+			resourceCooldownMs: (() => {
+				const minutes = Number(server.config.reconnectinterval);
+				return (Number.isFinite(minutes) && minutes > 0 ? minutes : 5) * 60 * 1000;
+			})(),
+		});
+		void node.reconnectController.start();
 		
 		node.on('input', function(msg){
 			if(node.isConnected && !node.isWriting){
-				writeGroup(msg.payload);	
+				void writeGroup(msg.payload);
 			}
         });	
 	
 		node.on('close', function(done){
+			node.reconnectController.stop();
 			node.status({});
-			node.destroy().then(function(){
+			node.destroy().then(done).catch(function(error){
+				node.error('OPCDA write close error: ' + messageOf(error));
 				done();
 			});
 		});
