@@ -16,13 +16,7 @@ const PERMANENT_ERROR_CODES = new Set([
 ]);
 
 function errorCodeOf(error) {
-	const candidates = [
-		error,
-		error && error.code,
-		error && error.status,
-		error && error.hresult,
-		error && error.message,
-	];
+	const candidates = [error, error && error.code, error && error.status, error && error.hresult];
 
 	for (const candidate of candidates) {
 		if (typeof candidate === 'number' && Number.isFinite(candidate)) {
@@ -36,17 +30,69 @@ function errorCodeOf(error) {
 			if (Number.isFinite(parsed)) return parsed >>> 0;
 		}
 
-		const hex = value.match(/0x[0-9a-f]+/i);
-		if (hex) return Number.parseInt(hex[0], 16) >>> 0;
+		if (/^0x[0-9a-f]+$/i.test(value)) {
+			return Number.parseInt(value, 16) >>> 0;
+		}
+	}
+
+	// Error messages may contain diagnostic hexadecimal values such as an RPC
+	// PDU type. Only extract embedded numbers when they are explicitly labelled
+	// as an HRESULT/RPC status/fault rather than accepting any 0x... substring.
+	const message = error && error.message;
+	if (typeof message === 'string') {
+		const wrappedNumber = message.match(/^(?:Error:\s*)*(0x[0-9a-f]+|-?\d+)$/i);
+		if (wrappedNumber) {
+			return wrappedNumber[1].toLowerCase().startsWith('0x') ?
+				Number.parseInt(wrappedNumber[1], 16) >>> 0 :
+				Number(wrappedNumber[1]) >>> 0;
+		}
+		const labelled = message.match(
+			/(?:HRESULT|RPC(?:\s+status)?|fault(?:\s+status)?|error\s+code)\s*[:=]?\s*(0x[0-9a-f]+|-?\d+)/i,
+		);
+		if (labelled) {
+			return labelled[1].toLowerCase().startsWith('0x') ?
+				Number.parseInt(labelled[1], 16) >>> 0 :
+				Number(labelled[1]) >>> 0;
+		}
 	}
 
 	return null;
+}
+
+function qualityName(quality) {
+	if (!Number.isFinite(quality)) return 'UNKNOWN';
+	switch (Number(quality) & 0xC0) {
+		case 0x00: return 'BAD';
+		case 0x40: return 'UNCERTAIN';
+		case 0xC0: return 'GOOD';
+		default: return 'UNKNOWN';
+	}
 }
 
 function messageOf(error) {
 	if (error && error.message) return error.message;
 	if (error == null) return 'Unknown error';
 	return String(error);
+}
+
+function isTransportFatal(error) {
+	if (!error) return false;
+	if (error.transportFatal === true) return true;
+
+	const code = typeof error.code === 'string' ? error.code.toUpperCase() : '';
+	if (code.startsWith('DCOM_')) return true;
+	if (new Set([
+		'ECONNABORTED',
+		'ECONNREFUSED',
+		'ECONNRESET',
+		'EHOSTUNREACH',
+		'ENETDOWN',
+		'ENETUNREACH',
+		'EPIPE',
+		'ETIMEDOUT',
+	]).has(code)) return true;
+
+	return /(?:connection|transport).*(?:timeout|timed out|closed|reset|disconnected)|(?:timeout|timed out).*(?:connection|transport)|unexpected (?:rpc )?pdu|concurrent receive/i.test(messageOf(error).replace(/\s+/g, ' '));
 }
 
 function withTimeout(action, timeoutMs, label) {
@@ -58,11 +104,47 @@ function withTimeout(action, timeoutMs, label) {
 		Promise.resolve().then(action),
 		new Promise((_, reject) => {
 			timer = setTimeout(
-				() => reject(new Error(`${label} timed out after ${timeout}ms`)),
+				() => {
+					const error = new Error(`${label} timed out after ${timeout}ms`);
+					error.code = 'OPCDA_OPERATION_TIMEOUT';
+					error.transportFatal = true;
+					reject(error);
+				},
 				timeout,
 			);
 		}),
 	]).finally(() => clearTimeout(timer));
+}
+
+async function forceCleanup(logger, refs, label, timeoutMs) {
+	const prefix = label || 'DCOM';
+	let success = true;
+
+	// Close the active byte stream first. This cancels a pending receive and
+	// prevents any later cleanup code from sending RPCs over a poisoned stream.
+	if (refs && refs.comServer && typeof refs.comServer.closeStub === 'function') {
+		success = await cleanupStep(
+			logger,
+			`close ${prefix} transport`,
+			() => refs.comServer.closeStub(),
+			timeoutMs,
+		) && success;
+	}
+
+	if (refs && refs.comSession &&
+		typeof refs.comSession.destroySession === 'function') {
+		success = await cleanupStep(
+			logger,
+			`discard ${prefix} session locally`,
+			() => refs.comSession.destroySession(
+				refs.comSession,
+				{skipRemoteRelease: true},
+			),
+			timeoutMs,
+		) && success;
+	}
+
+	return success;
 }
 
 async function cleanupStep(logger, label, action, timeoutMs) {
@@ -108,10 +190,10 @@ function createReconnectController(options) {
 		}
 	}
 
-	function ensureCleanup() {
+	function ensureCleanup(error, reason) {
 		if (!cleanupPromise) {
 			cleanupPromise = Promise.resolve()
-				.then(destroy)
+				.then(() => destroy(error, reason))
 				.catch(error => {
 					node.warn(`OPCDA cleanup before reconnect failed: ${messageOf(error)}`);
 				});
@@ -170,7 +252,7 @@ function createReconnectController(options) {
 		if (code === REMOTE_NO_MEMORY) {
 			resourceFailures += 1;
 		}
-		void ensureCleanup();
+		void ensureCleanup(error, reason);
 
 		if (PERMANENT_ERROR_CODES.has(code)) {
 			node.error('OPCDA reconnect stopped: permanent configuration or permission error.');
@@ -256,7 +338,10 @@ module.exports = {
 	PERMANENT_ERROR_CODES,
 	errorCodeOf,
 	messageOf,
+	isTransportFatal,
+	qualityName,
 	withTimeout,
 	cleanupStep,
+	forceCleanup,
 	createReconnectController,
 };
