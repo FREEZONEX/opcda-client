@@ -45,10 +45,10 @@ docker restart <node-red-container>
 客户端 `.tgz` 已包含运行所需依赖，客户服务器只需要复制并安装这一个包。
 
 ```bash
-docker cp tier0-node-red-contrib-opcda-client-1.0.31.tgz <node-red-container>:/data/
+docker cp tier0-node-red-contrib-opcda-client-1.0.32.tgz <node-red-container>:/data/
 docker exec -it <node-red-container> sh
 cd /data
-npm install --offline --no-audit --no-fund ./tier0-node-red-contrib-opcda-client-1.0.31.tgz
+npm install --offline --no-audit --no-fund ./tier0-node-red-contrib-opcda-client-1.0.32.tgz
 exit
 docker restart <node-red-container>
 ```

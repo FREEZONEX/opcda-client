@@ -2,6 +2,13 @@
 
 本文件记录实现、兼容性和连接生命周期相关变更。用户安装与节点操作请查看 [README.md](README.md)。
 
+## 1.0.32 - 2026-08-04
+
+### Documentation
+
+- 重写 README，集中说明安装、Server 配置、Browse、读取、写入、节点状态和常见问题处理。
+- 将 RPC/DCOM、资源释放和重连实现细节移入 CHANGELOG。
+
 ## 1.0.31 - 2026-08-04
 
 ### Changed
