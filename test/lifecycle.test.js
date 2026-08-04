@@ -6,6 +6,10 @@ const {
 	REMOTE_NO_MEMORY,
 	createReconnectController,
 	errorCodeOf,
+	forceCleanup,
+	isTransportFatal,
+	qualityName,
+	withTimeout,
 } = require('../opcda/lifecycle');
 
 function wait(ms) {
@@ -47,6 +51,80 @@ test('errorCodeOf normalizes numeric, decimal and hexadecimal RPC errors', () =>
 	assert.equal(errorCodeOf(new Error('HRESULT 0x1c00001b')), REMOTE_NO_MEMORY);
 	assert.equal(errorCodeOf({code: -2147024891}), 0x80070005);
 	assert.equal(errorCodeOf(new Error('connection timeout')), null);
+});
+
+test('errorCodeOf does not mistake an RPC PDU type for an HRESULT', () => {
+	const error = new Error('Received unexpected RPC PDU (type=0x0b, callId=7)');
+	error.code = 'DCOM_PROTOCOL_ERROR';
+	assert.equal(errorCodeOf(error), null);
+});
+
+test('OPC quality classification uses the category mask', () => {
+	assert.equal(qualityName(0x00), 'BAD');
+	assert.equal(qualityName(0x40), 'UNCERTAIN');
+	assert.equal(qualityName(0xC0), 'GOOD');
+	assert.equal(qualityName(0xDC), 'GOOD');
+	assert.equal(qualityName(0xFF), 'GOOD');
+	assert.equal(qualityName(NaN), 'UNKNOWN');
+});
+
+test('transport failures are distinguished from OPC application errors', () => {
+	assert.equal(isTransportFatal({code: 'DCOM_CONNECTION_TIMEOUT'}), true);
+	assert.equal(isTransportFatal({code: 'ECONNRESET'}), true);
+	assert.equal(isTransportFatal(new Error('Received unexpected PDU from server.')), true);
+	assert.equal(isTransportFatal(new Error('HRESULT 0x1c00001b')), false);
+	assert.equal(isTransportFatal({code: 0x80070005}), false);
+});
+
+test('operation timeout carries a fatal marker for cancellable teardown', async () => {
+	await assert.rejects(withTimeout(
+		() => new Promise(() => {}),
+		5,
+		'OPCDA read',
+	), error => {
+		assert.equal(error.code, 'OPCDA_OPERATION_TIMEOUT');
+		assert.equal(error.transportFatal, true);
+		assert.match(error.message, /OPCDA read timed out after 5ms/);
+		return true;
+	});
+});
+
+test('forced cleanup closes the transport before local-only session discard', async () => {
+	const calls = [];
+	const refs = {
+		comServer: {
+			closeStub: async () => { calls.push('close transport'); },
+		},
+		comSession: {
+			destroySession: async (session, options) => {
+				assert.equal(session, refs.comSession);
+				assert.deepEqual(options, {skipRemoteRelease: true});
+				calls.push('discard session');
+			},
+		},
+	};
+
+	assert.equal(await forceCleanup(null, refs, 'test', 50), true);
+	assert.deepEqual(calls, ['close transport', 'discard session']);
+});
+
+test('reconnect cleanup receives the original failure and reason', async () => {
+	const failure = Object.assign(new Error('connection timeout'), {
+		transportFatal: true,
+	});
+	let cleanupArgs;
+	const controller = createReconnectController({
+		node: {error: () => {}, warn: () => {}, updateStatus: () => {}},
+		connect: async () => {},
+		destroy: async (...args) => { cleanupArgs = args; },
+		baseDelayMs: 100,
+	});
+
+	controller.reconnect(failure, 'read');
+	await wait(0);
+	assert.equal(cleanupArgs[0], failure);
+	assert.equal(cleanupArgs[1], 'read');
+	controller.stop();
 });
 
 test('remote resource faults cool down after three failures and probe once per interval', async () => {

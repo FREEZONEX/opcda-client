@@ -2,7 +2,15 @@ module.exports = function(RED) {
 	const opcda = require('@tier0/node-opc-da');
     const { OPCServer } = opcda;
     const { ComServer, Session, Clsid } = opcda.dcom;
-	const { cleanupStep, errorCodeOf, messageOf } = require('./lifecycle');
+	const {
+		cleanupStep,
+		errorCodeOf,
+		forceCleanup,
+		isTransportFatal,
+		messageOf,
+		withTimeout,
+	} = require('./lifecycle');
+	const activeBrowses = new Set();
 	
 	const errorCode = {
 		0x80040154 : "Clsid is not found.",
@@ -77,9 +85,15 @@ module.exports = function(RED) {
 		return params;
 	}
 
-		RED.httpAdmin.get('/opcda/browse', RED.auth.needsPermission('node-opc-da.list'), function (req, res) {
+	RED.httpAdmin.post('/opcda/browse', RED.auth.needsPermission('node-opc-da.list'), function (req, res) {
 		async function browseItems() {
-			const params = resolveBrowseParams(req.query);
+			const params = resolveBrowseParams(req.body || {});
+			const browseKey = params.id || [params.address, params.clsid, params.username].join('|');
+			if (activeBrowses.has(browseKey)) {
+				res.status(409).send({error: 'An OPC DA browse is already running for this server.'});
+				return;
+			}
+			activeBrowses.add(browseKey);
 			let session = null;
 			let comServer = null;
 			let comObject = null;
@@ -87,6 +101,7 @@ module.exports = function(RED) {
 			let opcBrowser = null;
 			let responseStatus = 200;
 			let responseBody;
+			let browseError = null;
 			try {
 				if (!params.address || !params.clsid) {
 					res.status(400).send({error: "Missing address or clsid."});
@@ -99,22 +114,24 @@ module.exports = function(RED) {
 					return;
 				}
 
-				session = new Session();
-				session = session.createSession(params.domain, params.username, params.password);
-				session.setGlobalSocketTimeout(params.timeout);
-
-				comServer = new ComServer(new Clsid(params.clsid), params.address, session);
-				await comServer.init();
-
-				comObject = await comServer.createInstance();
-
-				opcServer = new opcda.OPCServer();
-				await opcServer.init(comObject);
-
-				opcBrowser = await opcServer.getBrowser();
-				const itemList = await opcBrowser.browseAllFlat();
+				const itemList = await withTimeout(async () => {
+					session = new Session().createSession(
+						params.domain,
+						params.username,
+						params.password,
+					);
+					session.setGlobalSocketTimeout(params.timeout);
+					comServer = new ComServer(new Clsid(params.clsid), params.address, session);
+					await comServer.init();
+					comObject = await comServer.createInstance();
+					opcServer = new opcda.OPCServer();
+					await opcServer.init(comObject);
+					opcBrowser = await opcServer.getBrowser();
+					return opcBrowser.browseAllFlat();
+				}, params.timeout, 'OPCDA browse');
 				responseBody = {items: itemList};
 			} catch (e) {
+				browseError = e;
 				const msg = formatBrowseError(e);
 				RED.log.error(`OPC DA browse: ${msg}`);
 				if (e && e.stack) RED.log.error(e.stack);
@@ -122,26 +139,28 @@ module.exports = function(RED) {
 				responseBody = {error: msg};
 			} finally {
 				const cleanupTimeout = Math.min(Math.max(params.timeout, 1000), 10000);
-				if (opcBrowser) {
-					await cleanupStep(RED.log, 'release Browse enumerator',
-						() => opcBrowser.end(), cleanupTimeout);
+				const refs = {comServer, comSession: session};
+				if (isTransportFatal(browseError)) {
+					await forceCleanup(RED.log, refs, 'Browse', cleanupTimeout);
+				} else {
+					let graceful = true;
+					const gracefulStep = async (label, action) => {
+						if (!graceful) return false;
+						graceful = await cleanupStep(RED.log, label, action, cleanupTimeout);
+						if (!graceful) await forceCleanup(RED.log, refs, 'Browse', cleanupTimeout);
+						return graceful;
+					};
+					if (opcBrowser) await gracefulStep('release Browse enumerator', () => opcBrowser.end());
+					if (opcServer) await gracefulStep('release Browse OPC server', () => opcServer.end());
+					if (comObject && typeof comObject.release === 'function') {
+						await gracefulStep('release Browse COM object', () => comObject.release());
+					}
+					if (session && typeof session.destroySession === 'function') {
+						await gracefulStep('destroy Browse DCOM session', () => session.destroySession(session));
+					}
+					if (comServer) await gracefulStep('close Browse DCOM transport', () => comServer.closeStub());
 				}
-				if (opcServer) {
-					await cleanupStep(RED.log, 'release Browse OPC server',
-						() => opcServer.end(), cleanupTimeout);
-				}
-				if (comObject && typeof comObject.release === 'function') {
-					await cleanupStep(RED.log, 'release Browse COM object',
-						() => comObject.release(), cleanupTimeout);
-				}
-				if (session && typeof session.destroySession === 'function') {
-					await cleanupStep(RED.log, 'destroy Browse DCOM session',
-						() => session.destroySession(session), cleanupTimeout);
-				}
-				if (comServer) {
-					await cleanupStep(RED.log, 'close Browse DCOM transport',
-						() => comServer.closeStub(), cleanupTimeout);
-				}
+				activeBrowses.delete(browseKey);
 			}
 			if (!res.headersSent) res.status(responseStatus).send(responseBody);
 		}

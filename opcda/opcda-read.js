@@ -5,8 +5,11 @@ module.exports = function(RED) {
 	const {
 		cleanupStep,
 		createReconnectController,
-		messageOf,
-		withTimeout,
+		forceCleanup,
+	isTransportFatal,
+	messageOf,
+	qualityName,
+	withTimeout,
 	} = require('./lifecycle');
 	
 	const errorCode = {
@@ -51,6 +54,7 @@ module.exports = function(RED) {
 
 		node.isConnected = false;
 		node.isReading = false;
+		node.isConnecting = false;
 
 		if(!server){
 			node.error("Please select a server.");
@@ -115,6 +119,8 @@ module.exports = function(RED) {
 			const configuredTimeout = Number.parseInt(server.config.timeout, 10);
 			const timeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ?
 				configuredTimeout : 15000;
+			node._diagStep = 'start';
+			node.isConnecting = true;
 			node.updateStatus('connecting');
 
 			try {
@@ -167,7 +173,7 @@ module.exports = function(RED) {
 							clientHandles[item.clientHandle] = item.itemID;
 						}
 					}
-				}, timeout, `OPCDA init at ${node._diagStep || 'start'}`);
+				}, timeout, 'OPCDA initialization');
 
 				node.isConnected = true;
 				node.updateStatus('ready');
@@ -182,14 +188,19 @@ module.exports = function(RED) {
 					});
 				}
 			} catch (error) {
-				node.error(`[OPCDA-DIAG] Failed at step: ${node._diagStep || 'unknown'}`);
-				node.error(`[OPCDA-DIAG] Error: ${messageOf(error)}`);
-				await node.destroy();
+				const closing = node.reconnectController && node.reconnectController.isClosing();
+				if (!closing) {
+					node.error(`[OPCDA-DIAG] Failed at step: ${node._diagStep || 'unknown'}`);
+					node.error(`[OPCDA-DIAG] Error: ${messageOf(error)}`);
+				}
+				await node.destroy(error);
 				throw error;
+			} finally {
+				node.isConnecting = false;
 			}
 		}
 	
-		node.destroy = async function(){
+		node.destroy = async function(error){
 			node.isConnected = false;
 			node.isReading = false;
 			const refs = {
@@ -210,40 +221,66 @@ module.exports = function(RED) {
 			node.comObject = null;
 			serverHandles = [];
 			clientHandles = [];
+			if (!Object.values(refs).some(Boolean)) return;
 
 			const cleanupTimeout = 5000;
+			if (isTransportFatal(error)) {
+				node.warn(
+					`OPCDA cleanup: transport is unusable (${messageOf(error)}); ` +
+					`closing it without remote COM release calls.`,
+				);
+				await forceCleanup(node, refs, 'OPC read', cleanupTimeout);
+				return;
+			}
+
+			const gracefulStep = async function(label, action) {
+				const completed = await cleanupStep(node, label, action, cleanupTimeout);
+				if (!completed) {
+					node.warn(
+						'OPCDA cleanup: graceful release did not complete; ' +
+						'forcing local transport teardown.',
+					);
+					await forceCleanup(node, refs, 'OPC read', cleanupTimeout);
+				}
+				return completed;
+			};
+
 			if (refs.opcServer && refs.opcGroup &&
 				typeof refs.opcServer.removeGroup === 'function') {
-				await cleanupStep(node, 'remove OPC group',
-					() => refs.opcServer.removeGroup(refs.opcGroup, true), cleanupTimeout);
+				if (!await gracefulStep(
+					'remove OPC group',
+					() => refs.opcServer.removeGroup(refs.opcGroup, true),
+				)) return;
 			}
 			if (refs.opcSyncIO) {
-				await cleanupStep(node, 'release SyncIO',
-					() => refs.opcSyncIO.end(), cleanupTimeout);
+				if (!await gracefulStep('release SyncIO', () => refs.opcSyncIO.end())) return;
 			}
 			if (refs.opcItemMgr) {
-				await cleanupStep(node, 'release ItemManager',
-					() => refs.opcItemMgr.end(), cleanupTimeout);
+				if (!await gracefulStep(
+					'release ItemManager',
+					() => refs.opcItemMgr.end(),
+				)) return;
 			}
 			if (refs.opcGroup) {
-				await cleanupStep(node, 'release OPC group',
-					() => refs.opcGroup.end(), cleanupTimeout);
+				if (!await gracefulStep('release OPC group', () => refs.opcGroup.end())) return;
 			}
 			if (refs.opcServer) {
-				await cleanupStep(node, 'release OPC server',
-					() => refs.opcServer.end(), cleanupTimeout);
+				if (!await gracefulStep('release OPC server', () => refs.opcServer.end())) return;
 			}
 			if (refs.comObject && typeof refs.comObject.release === 'function') {
-				await cleanupStep(node, 'release root COM object',
-					() => refs.comObject.release(), cleanupTimeout);
+				if (!await gracefulStep(
+					'release root COM object',
+					() => refs.comObject.release(),
+				)) return;
 			}
 			if (refs.comSession && typeof refs.comSession.destroySession === 'function') {
-				await cleanupStep(node, 'destroy DCOM session',
-					() => refs.comSession.destroySession(refs.comSession), cleanupTimeout);
+				if (!await gracefulStep(
+					'destroy DCOM session',
+					() => refs.comSession.destroySession(refs.comSession),
+				)) return;
 			}
 			if (refs.comServer) {
-				await cleanupStep(node, 'close DCOM transport',
-					() => refs.comServer.closeStub(), cleanupTimeout);
+				await gracefulStep('close DCOM transport', () => refs.comServer.closeStub());
 			}
 		}
 
@@ -255,7 +292,14 @@ module.exports = function(RED) {
 			node.isReading = true;
 			node.updateStatus('reading');
 			try {
-				const valueSets = await node.opcSyncIO.read(dataSource, serverHandles);
+				const configuredTimeout = Number.parseInt(server.config.timeout, 10);
+				const readTimeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ?
+					configuredTimeout : 15000;
+				const valueSets = await withTimeout(
+					() => node.opcSyncIO.read(dataSource, serverHandles),
+					readTimeout,
+					'OPCDA read',
+				);
 					
 				var datas = [];
 				
@@ -275,23 +319,8 @@ module.exports = function(RED) {
 						oldValues[i] = valueSets[i].value;			
 					}
 					
-					var quality;
-					
-					if(valueSets[i].quality >= 0 && valueSets[i].quality < 64){
-						quality = "BAD";
-						isGood = false;
-					}
-					else if(valueSets[i].quality >= 64 && valueSets[i].quality < 192){
-						quality = "UNCERTAIN";
-						isGood = false;
-					}
-					else if(valueSets[i].quality >= 192 && valueSets[i].quality <= 219){
-						quality = "GOOD";
-					}
-					else{
-						quality = "UNKNOWN";
-						isGood = false;
-					}
+					const quality = qualityName(valueSets[i].quality);
+					if (quality !== 'GOOD') isGood = false;
 					
 					var data = {
 						itemID: clientHandles[valueSets[i].clientHandle],
@@ -335,6 +364,7 @@ module.exports = function(RED) {
 				}
 				node.reconnectController.markHealthy();
 			} catch(e) {
+				if (node.reconnectController.isClosing()) return;
 				node.isConnected = false;
 				node.updateStatus("error");
 				node.reconnectController.reconnect(e, 'read');
@@ -363,7 +393,11 @@ module.exports = function(RED) {
 		node.on('close', function(done){
 			node.reconnectController.stop();
 			node.status({});
-			node.destroy().then(done).catch(function(error){
+			const closeError = (node.isReading || node.isConnecting) ? Object.assign(
+				new Error('Node-RED is closing during an active OPC DA operation.'),
+				{code: 'DCOM_NODE_CLOSING', transportFatal: true},
+			) : undefined;
+			node.destroy(closeError).then(done).catch(function(error){
 				node.error('OPCDA close error: ' + messageOf(error));
 				done();
 			});
