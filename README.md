@@ -1,36 +1,36 @@
 # @tier0/node-red-contrib-opcda-client
 
-用于在 Node-RED 中连接传统 OPC DA 服务器，支持 Browse、读取和写入 OPC Item。
+Node-RED nodes for browsing, reading, and writing data from classic OPC DA servers over DCOM.
 
-> 本节点用于 OPC DA，不是 OPC UA。使用前需要准备 OPC Server 地址、Windows/DCOM 账户和 CLSID。
+> This package supports OPC DA, not OPC UA. Before you begin, obtain the OPC server address, Windows/DCOM credentials, and CLSID.
 
-## 提供的节点
+## Included nodes
 
-| 节点 | 用途 |
+| Node | Purpose |
 | --- | --- |
-| `tier0-opcda-server` | 配置 OPC DA 服务器 |
-| `tier0-opcda-read` | 读取 OPC Item |
-| `tier0-opcda-write` | 写入 OPC Item |
+| `tier0-opcda-server` | Stores the OPC DA server connection settings |
+| `tier0-opcda-read` | Reads configured OPC item values |
+| `tier0-opcda-write` | Writes one or more OPC item values |
 
-## 使用前检查
+## Before you begin
 
-- Node-RED 所在主机或容器可以访问 OPC DA 服务器。
-- OPC DA 服务器已启用远程 DCOM。
-- TCP 135 和服务器使用的动态 RPC 端口可以访问。
-- 使用的账户具有 DCOM Launch、Activation、Access 和 OPC Server 访问权限。
-- 已取得目标 OPC Server 的 CLSID。
+- The Node-RED host or container can reach the OPC DA server.
+- Remote DCOM access is enabled on the OPC DA server.
+- TCP port 135 and the dynamic RPC ports used by the server are reachable.
+- The Windows account has DCOM Launch, Activation, and Access permissions, as well as access to the OPC server.
+- You know the CLSID of the target OPC DA server.
 
-## 安装
+## Installation
 
-### 在线安装
+### Online installation
 
-进入 Node-RED 用户目录后执行：
+Run the following command from the Node-RED user directory:
 
 ```bash
 npm install @tier0/node-red-contrib-opcda-client
 ```
 
-Docker 中 Node-RED 用户目录通常是 `/data`：
+The Node-RED user directory is usually `/data` in Docker:
 
 ```bash
 docker exec -it <node-red-container> sh
@@ -40,94 +40,94 @@ exit
 docker restart <node-red-container>
 ```
 
-### Docker 离线安装
+### Offline Docker installation
 
-客户端 `.tgz` 已包含运行所需依赖，客户服务器只需要复制并安装这一个包。
+The client `.tgz` contains all required runtime dependencies. Only this one file needs to be copied to an offline customer server.
 
 ```bash
-docker cp tier0-node-red-contrib-opcda-client-1.0.32.tgz <node-red-container>:/data/
+docker cp tier0-node-red-contrib-opcda-client-1.0.33.tgz <node-red-container>:/data/
 docker exec -it <node-red-container> sh
 cd /data
-npm install --offline --no-audit --no-fund ./tier0-node-red-contrib-opcda-client-1.0.32.tgz
+npm install --offline --no-audit --no-fund ./tier0-node-red-contrib-opcda-client-1.0.33.tgz
 exit
 docker restart <node-red-container>
 ```
 
-如果在线安装提示 `getaddrinfo EAI_AGAIN registry.npmjs.org`，表示容器无法访问 npm registry，请改用离线安装。
+If online installation reports `getaddrinfo EAI_AGAIN registry.npmjs.org`, the container cannot reach the npm registry. Use the offline installation procedure instead.
 
-## 快速开始
+## Quick start
 
-1. 在 Flow 中添加 `tier0-opcda-read`。
-2. 新建一个 `tier0-opcda-server` 配置。
-3. 保存并 Deploy。
-4. 打开 Server 配置，点击 **Browse** 获取 Item。
-5. 点击 **Export** 导出 Item 列表。
-6. 在 Read 节点中点击 **Import** 导入列表。
-7. 连接 `inject -> tier0-opcda-read -> debug`。
-8. 再次 Deploy，等待 Read 节点显示 `Ready`。
-9. 点击 Inject，查看 Debug 中的读取结果。
+1. Add a `tier0-opcda-read` node to the flow.
+2. Create a new `tier0-opcda-server` configuration.
+3. Save and deploy the flow.
+4. Open the server configuration and click **Browse**.
+5. Click **Export** to download the item list.
+6. Open the Read node and click **Import** to import the list.
+7. Connect `inject -> tier0-opcda-read -> debug`.
+8. Deploy again and wait for the Read node to show `Ready`.
+9. Click Inject and inspect the result in the Debug sidebar.
 
 ```text
 [inject] -> [tier0-opcda-read] -> [debug / function / mqtt]
 ```
 
-## Server 配置
+## Server configuration
 
-| 字段 | 填写内容 |
+| Field | Description |
 | --- | --- |
-| Name | Node-RED 中显示的服务器名称 |
-| Address | OPC DA 服务器 IP 或主机名，例如 `192.168.31.31` |
-| Domain | Windows/NTLM 域，按现场账户配置填写 |
-| User Name | 有权访问 DCOM 和 OPC Server 的账户 |
-| Password | 账户密码 |
-| ClsId | OPC Server 的 Class ID |
-| Timeout | 连接和操作超时，单位 ms |
-| Reconnect cooldown | 服务器资源不足时的重试冷却时间，单位分钟，默认 5 分钟 |
+| Name | Server name shown in Node-RED |
+| Address | OPC DA server IP address or hostname, for example `192.168.31.31` |
+| Domain | Windows/NTLM domain required by the server account |
+| User Name | Account with DCOM and OPC server access |
+| Password | Password for the account |
+| ClsId | Class ID of the OPC DA server |
+| Timeout | Connection and operation timeout in milliseconds |
+| Reconnect cooldown | Retry cooldown in minutes after the server reports resource exhaustion; default: 5 minutes |
 
-现场 Item 较多或 OPC Server 响应较慢时，可先将 Timeout 设置为 `15000` 或 `20000` ms。
+For a slow server or a large item list, start with a Timeout of `15000` or `20000` ms.
 
-## Browse Item
+## Browsing items
 
-打开 `tier0-opcda-server` 配置页面：
+Open the `tier0-opcda-server` configuration:
 
-1. 点击 **Browse**。
-2. 等待页面显示找到的 Item 数量。
-3. 点击 **Export** 下载 `export.json`。
-4. 打开 Read 节点，点击 **Import** 导入该文件。
+1. Click **Browse**.
+2. Wait for the number of discovered items to appear.
+3. Click **Export** to download `export.json`.
+4. Open the Read node and click **Import** to load the file.
 
-注意：
+Notes:
 
-- 第一次 Browse 前必须先保存并 Deploy Server 配置。
-- Node-RED 不会在编辑页面回显已经保存的密码，这是正常现象。
-- 同一个 Server 配置不能同时执行多次 Browse。
-- Node-RED 启用权限控制时，用户需要 `node-opc-da.list` 权限。
+- Save and deploy the server configuration before the first Browse.
+- Node-RED does not display a saved password again in the editor. This is expected.
+- The same server configuration cannot run multiple Browse operations at the same time.
+- When Node-RED permission control is enabled, the user needs the `node-opc-da.list` permission.
 
-## Read 节点
+## Read node
 
-### 配置项
+### Settings
 
-| 字段 | 说明 |
+| Field | Description |
 | --- | --- |
-| Server | 选择 OPC DA Server 配置 |
-| Name | 节点名称 |
-| Cache Read | 勾选后读取 OPC Server 缓存；不勾选时读取 Device |
-| Data Change | 勾选后仅在至少一个值变化时输出 |
-| Items | 要读取的 Item ID 列表 |
+| Server | OPC DA Server configuration to use |
+| Name | Node name |
+| Cache Read | Read from the OPC server cache when selected; otherwise read from Device |
+| Data Change | Only send output when at least one value has changed |
+| Items | OPC item IDs to read |
 
 ### Cache Read
 
-- 开启：读取 OPC Server 缓存，通常更快、对下位设备压力更小。
-- 关闭：由 OPC Server 从 Device 读取，实时性取决于服务器和设备状态。
+- Enabled: reads the current OPC server cache. This is usually faster and creates less load on field devices.
+- Disabled: requests a Device read. Actual freshness depends on the OPC server and device communication state.
 
-### 触发读取
+### Triggering a read
 
-Read 节点每收到一条输入消息读取一次。输入消息的 payload 内容不会作为读取参数。
+Each input message triggers one read. The input payload is not used as a read parameter.
 
-如果节点还在 `Reading`，新的触发消息不会启动第二个并发读取。
+If the node is already `Reading`, another input message will not start a concurrent read.
 
-### 输出格式
+### Output
 
-读取成功后，`msg.payload` 是数组：
+After a successful read, `msg.payload` is an array:
 
 ```json
 [
@@ -135,25 +135,25 @@ Read 节点每收到一条输入消息读取一次。输入消息的 payload 内
     "itemID": "Channel1.Device1.Tag1",
     "errorCode": 0,
     "quality": "GOOD",
-    "timestamp": "2026-08-04T08:00:00.000Z",
+    "timestamp": "2026-08-05T08:00:00.000Z",
     "value": 123.45
   }
 ]
 ```
 
-| 字段 | 说明 |
+| Property | Description |
 | --- | --- |
-| `itemID` | OPC Item ID |
-| `errorCode` | OPC DA 返回码，成功通常为 `0` |
-| `quality` | `GOOD`、`UNCERTAIN`、`BAD` 或 `UNKNOWN` |
-| `timestamp` | OPC Server 返回的时间戳 |
-| `value` | 当前值 |
+| `itemID` | OPC item ID |
+| `errorCode` | OPC DA result code; normally `0` on success |
+| `quality` | `GOOD`, `UNCERTAIN`, `BAD`, or `UNKNOWN` |
+| `timestamp` | Timestamp returned by the OPC server |
+| `value` | Current value |
 
-当前版本只有在本次所有数据质量均为 `GOOD` 时才输出。如果节点显示 `Bad Quality`，请检查 OPC Server 中相应 Item 的质量。
+The current version only sends an output message when all returned values have `GOOD` quality. If the node shows `Bad Quality`, inspect the corresponding items in the OPC server.
 
-## Write 节点
+## Write node
 
-将写入内容放到 `msg.payload`，格式必须是非空数组：
+Set `msg.payload` to a non-empty array of values to write:
 
 ```json
 [
@@ -170,66 +170,66 @@ Read 节点每收到一条输入消息读取一次。输入消息的 payload 内
 ]
 ```
 
-支持的 `type`：
+Supported `type` values:
 
 ```text
 double, short, integer, float, byte, long, boolean,
 uuid, string, char, date, currency, array
 ```
 
-输出结果：
+Output:
 
-- 写入成功：`msg.payload` 为 `true`
-- 写入失败：`msg.payload` 为 `false`
-- 输入格式错误或服务器拒绝写入时，消息中还可能包含 `msg.error` 和 `msg.details`
+- Success: `msg.payload` is `true`.
+- Failure: `msg.payload` is `false`.
+- Input validation and server rejection errors may also include `msg.error` and `msg.details`.
 
-## 节点状态
+## Node status
 
-| 状态 | 用户操作 |
+| Status | Recommended action |
 | --- | --- |
-| Ready | 可以触发读取或写入 |
-| Reading / Writing | 等待当前操作完成 |
-| Good Quality | 最近一次读取正常 |
-| Bad Quality | 检查 OPC Server 中 Item 的通信和质量 |
-| Mismatch Data | 检查配置的 Item 是否有效、是否全部成功添加 |
-| Reconnecting | 等待节点自动重连 |
-| Resource cooldown | 等待配置的冷却时间，并检查 OPC Server 客户端数和资源使用情况 |
-| Reconnect stopped | 修正账户、权限或 CLSID 后重新 Deploy |
-| Disconnected / Error | 查看 Node-RED 日志，节点通常会自动重连 |
+| Ready | The node can read or write |
+| Reading / Writing | Wait for the current operation to finish |
+| Good Quality | The most recent read completed normally |
+| Bad Quality | Check item communication and quality in the OPC server |
+| Mismatch Data | Check whether every configured item is valid and was added successfully |
+| Reconnecting | Wait for automatic reconnection |
+| Resource cooldown | Wait for the configured cooldown and inspect OPC server client/resource usage |
+| Reconnect stopped | Correct the account, permissions, or CLSID, then deploy again |
+| Disconnected / Error | Check the Node-RED log; the node will normally attempt to reconnect |
 
-## 常见问题
+## Troubleshooting
 
-### 节点显示 Ready，点击 Inject 没有输出
+### The node shows Ready, but Inject produces no output
 
-- 确认 Read 节点已经添加 Item。
-- 检查节点是否变成 `Bad Quality`。
-- 确认上一次读取没有一直停留在 `Reading`。
-- 在 Read 后连接 Debug 节点。
-- 添加 Catch 和 Status 节点，查看 Flow 中的错误和状态。
-- 查看 Node-RED 容器日志。
+- Confirm that the Read node contains at least one item.
+- Check whether the node changes to `Bad Quality`.
+- Confirm that the previous read is not stuck in `Reading`.
+- Connect a Debug node after the Read node.
+- Add Catch and Status nodes to the flow.
+- Inspect the Node-RED container log, not only the editor sidebar.
 
-### Browse 提示账号、权限或密码错误
+### Browse reports an account, permission, or password error
 
-- 保存并 Deploy Server 配置后再 Browse。
-- 重新输入账号密码并 Deploy。
-- 检查 DCOM 和 OPC Server 权限。
-- 检查 CLSID 是否属于目标 OPC DA Server。
-- 启用 Node-RED 权限控制时，授予 `node-opc-da.list`。
+- Save and deploy the Server configuration before browsing.
+- Re-enter the username and password, then deploy again.
+- Verify DCOM and OPC server permissions.
+- Verify that the CLSID belongs to the target OPC DA server.
+- Grant `node-opc-da.list` when Node-RED permission control is enabled.
 
-### 出现 `HRESULT 0x1c00001b (469762075)`
+### `HRESULT 0x1c00001b (469762075)`
 
-检查 OPC Server 的客户端数、Session、Group、COM 对象、内存和句柄是否达到上限，同时确认是否还有其他采集器连接该服务器。节点会显示 `Resource cooldown`，冷却后自动尝试恢复。
+Check whether the OPC server has reached its client, Session, Group, COM object, memory, or handle limits. Also check whether other collectors are connected to the same server. The node displays `Resource cooldown` and automatically retries after the configured interval.
 
-### 出现 `Received unexpected PDU from server`、connection timeout 或 connection closed
+### `Received unexpected PDU from server`, connection timeout, or connection closed
 
-节点会自动断开当前异常连接并重连。若频繁出现，请检查：
+The node closes the affected connection and reconnects automatically. If the error occurs frequently, check:
 
-- 其他采集器是否同时造成 OPC Server 负载波动
-- OPC Server 和 Windows DCOM 日志
-- 防火墙、NAT 和动态 RPC 端口
-- Timeout 是否小于现场一次读取需要的时间
+- Whether other collectors are causing load fluctuations on the OPC server.
+- OPC server and Windows DCOM logs.
+- Firewall, NAT, and dynamic RPC port access.
+- Whether Timeout is shorter than a complete read at the site.
 
-## 截图
+## Screenshots
 
 ### Server
 
@@ -243,10 +243,10 @@ uuid, string, char, date, currency, array
 
 ![OPC DA write node](images/opcda_write.png)
 
-## 版本变更
+## Changes
 
-实现层面的修复和兼容性说明请查看 [CHANGELOG.md](CHANGELOG.md)。
+See [CHANGELOG.md](CHANGELOG.md) for implementation and compatibility changes.
 
 ## License
 
-Apache-2.0。项目基于原始 `node-red-contrib-opcda-client` 维护。
+Apache-2.0. This project is maintained from the original `node-red-contrib-opcda-client` project.
