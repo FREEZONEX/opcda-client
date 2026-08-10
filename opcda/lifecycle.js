@@ -6,6 +6,20 @@ const DEFAULT_RECONNECT_MAX_MS = 60000;
 const DEFAULT_MAX_FAILURES = 10;
 const DEFAULT_RESOURCE_COOLDOWN_MS = 5 * 60 * 1000;
 const REMOTE_NO_MEMORY = 0x1C00001B;
+const WINDOWS_SHARING_BUFFER_EXCEEDED = 0x80070024;
+const WINDOWS_MAX_THREADS_REACHED = 0x800700A4;
+
+const REMOTE_RESOURCE_ERROR_CODES = new Set([
+	REMOTE_NO_MEMORY,
+	WINDOWS_SHARING_BUFFER_EXCEEDED,
+	WINDOWS_MAX_THREADS_REACHED,
+]);
+
+const ERROR_CODE_NAMES = new Map([
+	[REMOTE_NO_MEMORY, 'RPC_S_FAULT_REMOTE_NO_MEMORY'],
+	[WINDOWS_SHARING_BUFFER_EXCEEDED, 'ERROR_SHARING_BUFFER_EXCEEDED'],
+	[WINDOWS_MAX_THREADS_REACHED, 'ERROR_MAX_THRDS_REACHED'],
+]);
 
 const PERMANENT_ERROR_CODES = new Set([
 	0x00000005, // Access denied
@@ -75,6 +89,10 @@ function messageOf(error) {
 	return String(error);
 }
 
+function errorCodeName(code) {
+	return ERROR_CODE_NAMES.get(code) || null;
+}
+
 function isTransportFatal(error) {
 	if (!error) return false;
 	if (error.transportFatal === true) return true;
@@ -114,6 +132,12 @@ function withTimeout(action, timeoutMs, label) {
 			);
 		}),
 	]).finally(() => clearTimeout(timer));
+}
+
+function runTimedStep(target, step, action, timeoutMs, operation) {
+	if (target) target._diagStep = step;
+	const label = `${operation || 'OPCDA initialization'} at ${step}`;
+	return withTimeout(action, timeoutMs, label);
 }
 
 async function forceCleanup(logger, refs, label, timeoutMs) {
@@ -219,7 +243,9 @@ function createReconnectController(options) {
 
 	function reportFailure(error, reason) {
 		const code = errorCodeOf(error);
-		const codeText = code == null ? '' : ` [0x${code.toString(16)}]`;
+		const name = errorCodeName(code);
+		const codeText = code == null ? '' :
+			` [0x${code.toString(16)}${name ? ` ${name}` : ''}]`;
 		node.error(`OPCDA ${reason} failed${codeText}: ${messageOf(error)}`);
 		return code;
 	}
@@ -249,8 +275,17 @@ function createReconnectController(options) {
 
 		const code = reportFailure(error, reason);
 		consecutiveFailures += 1;
-		if (code === REMOTE_NO_MEMORY) {
+		const resourceFailure = REMOTE_RESOURCE_ERROR_CODES.has(code);
+		if (resourceFailure) {
 			resourceFailures += 1;
+			node.warn(
+				`OPCDA remote resource failure ${resourceFailures}/${resourceFailureLimit} ` +
+				`[0x${code.toString(16)} ${errorCodeName(code)}].`,
+			);
+		} else if (!resourceCooldownActive) {
+			// The threshold applies to consecutive resource failures. Once a
+			// cooldown has started, any failed probe must enter cooldown again.
+			resourceFailures = 0;
 		}
 		void ensureCleanup(error, reason);
 
@@ -335,12 +370,17 @@ module.exports = {
 	DEFAULT_CLEANUP_TIMEOUT_MS,
 	DEFAULT_RESOURCE_COOLDOWN_MS,
 	REMOTE_NO_MEMORY,
+	WINDOWS_SHARING_BUFFER_EXCEEDED,
+	WINDOWS_MAX_THREADS_REACHED,
+	REMOTE_RESOURCE_ERROR_CODES,
 	PERMANENT_ERROR_CODES,
 	errorCodeOf,
+	errorCodeName,
 	messageOf,
 	isTransportFatal,
 	qualityName,
 	withTimeout,
+	runTimedStep,
 	cleanupStep,
 	forceCleanup,
 	createReconnectController,

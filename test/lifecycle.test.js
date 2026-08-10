@@ -4,11 +4,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
 	REMOTE_NO_MEMORY,
+	WINDOWS_SHARING_BUFFER_EXCEEDED,
+	WINDOWS_MAX_THREADS_REACHED,
 	createReconnectController,
 	errorCodeOf,
+	errorCodeName,
 	forceCleanup,
 	isTransportFatal,
 	qualityName,
+	runTimedStep,
 	withTimeout,
 } = require('../opcda/lifecycle');
 
@@ -49,8 +53,22 @@ test('errorCodeOf normalizes numeric, decimal and hexadecimal RPC errors', () =>
 	assert.equal(errorCodeOf(REMOTE_NO_MEMORY), REMOTE_NO_MEMORY);
 	assert.equal(errorCodeOf(new Error(String(REMOTE_NO_MEMORY))), REMOTE_NO_MEMORY);
 	assert.equal(errorCodeOf(new Error('HRESULT 0x1c00001b')), REMOTE_NO_MEMORY);
+	assert.equal(
+		errorCodeOf(new Error(String(WINDOWS_SHARING_BUFFER_EXCEEDED))),
+		WINDOWS_SHARING_BUFFER_EXCEEDED,
+	);
+	assert.equal(
+		errorCodeOf(new Error(String(WINDOWS_MAX_THREADS_REACHED))),
+		WINDOWS_MAX_THREADS_REACHED,
+	);
 	assert.equal(errorCodeOf({code: -2147024891}), 0x80070005);
 	assert.equal(errorCodeOf(new Error('connection timeout')), null);
+	assert.equal(errorCodeName(REMOTE_NO_MEMORY), 'RPC_S_FAULT_REMOTE_NO_MEMORY');
+	assert.equal(
+		errorCodeName(WINDOWS_SHARING_BUFFER_EXCEEDED),
+		'ERROR_SHARING_BUFFER_EXCEEDED',
+	);
+	assert.equal(errorCodeName(WINDOWS_MAX_THREADS_REACHED), 'ERROR_MAX_THRDS_REACHED');
 });
 
 test('errorCodeOf does not mistake an RPC PDU type for an HRESULT', () => {
@@ -85,6 +103,28 @@ test('operation timeout carries a fatal marker for cancellable teardown', async 
 		assert.equal(error.code, 'OPCDA_OPERATION_TIMEOUT');
 		assert.equal(error.transportFatal, true);
 		assert.match(error.message, /OPCDA read timed out after 5ms/);
+		return true;
+	});
+});
+
+test('timed initialization steps report the active step', async () => {
+	const target = {_diagStep: 'start'};
+	assert.equal(await runTimedStep(
+		target,
+		'comServer.init',
+		async () => 'connected',
+		50,
+	), 'connected');
+	assert.equal(target._diagStep, 'comServer.init');
+
+	await assert.rejects(runTimedStep(
+		target,
+		'getSyncIO',
+		() => new Promise(() => {}),
+		5,
+	), error => {
+		assert.equal(target._diagStep, 'getSyncIO');
+		assert.match(error.message, /OPCDA initialization at getSyncIO timed out after 5ms/);
 		return true;
 	});
 });
@@ -127,7 +167,7 @@ test('reconnect cleanup receives the original failure and reason', async () => {
 	controller.stop();
 });
 
-test('remote resource faults cool down after three failures and probe once per interval', async () => {
+test('Windows thread-limit faults cool down after three failures and probe once per interval', async () => {
 	const errors = [];
 	const warnings = [];
 	const statuses = [];
@@ -144,7 +184,9 @@ test('remote resource faults cool down after three failures and probe once per i
 		node,
 		connect: async () => {
 			connectCount += 1;
-			if (connectShouldFail) throw new Error(String(REMOTE_NO_MEMORY));
+			if (connectShouldFail) {
+				throw new Error(String(WINDOWS_MAX_THREADS_REACHED));
+			}
 		},
 		destroy: async () => { destroyCount += 1; },
 		baseDelayMs: 3000,
@@ -156,7 +198,10 @@ test('remote resource faults cool down after three failures and probe once per i
 		cancelTimer: timers.cancel,
 	});
 
-	assert.equal(controller.reconnect(new Error(String(REMOTE_NO_MEMORY)), 'browse'), true);
+	assert.equal(controller.reconnect(
+		new Error(String(WINDOWS_MAX_THREADS_REACHED)),
+		'connect',
+	), true);
 	await wait(0);
 	assert.equal(timers.nextDelay(), 3000);
 	await timers.fireNext();
@@ -188,6 +233,35 @@ test('remote resource faults cool down after three failures and probe once per i
 	assert.equal(controller.getFailureCount(), 0);
 	assert.equal(controller.getResourceFailureCount(), 0);
 	assert.equal(errors.length, 4);
+	assert.match(errors[0], /0x800700a4 ERROR_MAX_THRDS_REACHED/);
+	controller.stop();
+});
+
+test('a non-resource failure resets the consecutive resource-failure streak', async () => {
+	const timers = fakeTimers();
+	const connectErrors = [
+		new Error('connection timeout'),
+		new Error(String(WINDOWS_MAX_THREADS_REACHED)),
+	];
+	const controller = createReconnectController({
+		node: {error: () => {}, warn: () => {}, updateStatus: () => {}},
+		connect: async () => { throw connectErrors.shift(); },
+		destroy: async () => {},
+		baseDelayMs: 1,
+		resourceFailureLimit: 3,
+		scheduleTimer: timers.schedule,
+		cancelTimer: timers.cancel,
+	});
+
+	controller.reconnect(new Error(String(REMOTE_NO_MEMORY)), 'read');
+	await wait(0);
+	assert.equal(controller.getResourceFailureCount(), 1);
+
+	await timers.fireNext();
+	assert.equal(controller.getResourceFailureCount(), 0);
+	await timers.fireNext();
+	assert.equal(controller.getResourceFailureCount(), 1);
+	assert.equal(controller.isCoolingDown(), false);
 	controller.stop();
 });
 

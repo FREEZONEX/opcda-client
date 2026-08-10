@@ -9,6 +9,7 @@ module.exports = function(RED) {
 	isTransportFatal,
 	messageOf,
 	qualityName,
+	runTimedStep,
 	withTimeout,
 	} = require('./lifecycle');
 	
@@ -131,49 +132,56 @@ module.exports = function(RED) {
 				);
 				node.comSession.setGlobalSocketTimeout(timeout);
 
-				await withTimeout(async () => {
-					node.comServer = new ComServer(
-						new Clsid(server.config.clsid),
-						server.config.address,
-						node.comSession,
-					);
-					node._diagStep = 'comServer.init';
-					await node.comServer.init();
+				node.comServer = new ComServer(
+					new Clsid(server.config.clsid),
+					server.config.address,
+					node.comSession,
+				);
+				await runTimedStep(
+					node, 'comServer.init', () => node.comServer.init(), timeout,
+				);
 
-					node._diagStep = 'comServer.createInstance';
-					node.comObject = await node.comServer.createInstance();
+				node.comObject = await runTimedStep(
+					node, 'comServer.createInstance',
+					() => node.comServer.createInstance(), timeout,
+				);
 
-					node._diagStep = 'opcServer.init';
-					node.opcServer = new OPCServer();
-					await node.opcServer.init(node.comObject);
+				node.opcServer = new OPCServer();
+				await runTimedStep(
+					node, 'opcServer.init', () => node.opcServer.init(node.comObject), timeout,
+				);
 
-					serverHandles = [];
-					clientHandles = [];
+				serverHandles = [];
+				clientHandles = [];
 
-					node._diagStep = 'addGroup';
-					node.opcGroup = await node.opcServer.addGroup(config.id, null);
-					node._diagStep = 'getItemManager';
-					node.opcItemMgr = await node.opcGroup.getItemManager();
-					node._diagStep = 'getSyncIO';
-					node.opcSyncIO = await node.opcGroup.getSyncIO();
+				node.opcGroup = await runTimedStep(
+					node, 'addGroup', () => node.opcServer.addGroup(config.id, null), timeout,
+				);
+				node.opcItemMgr = await runTimedStep(
+					node, 'getItemManager', () => node.opcGroup.getItemManager(), timeout,
+				);
+				node.opcSyncIO = await runTimedStep(
+					node, 'getSyncIO', () => node.opcGroup.getSyncIO(), timeout,
+				);
 
-					let clientHandle = 1;
-					const itemsList = groupItems.map(itemID => ({
-						itemID,
-						clientHandle: clientHandle++,
-					}));
-					const addedItems = await node.opcItemMgr.add(itemsList);
-					for (let i = 0; i < addedItems.length; i++) {
-						const addedItem = addedItems[i];
-						const item = itemsList[i];
-						if (addedItem[0] !== 0) {
-							node.warn(`Error adding item '${item.itemID}'`);
-						} else {
-							serverHandles.push(addedItem[1].serverHandle);
-							clientHandles[item.clientHandle] = item.itemID;
-						}
+				let clientHandle = 1;
+				const itemsList = groupItems.map(itemID => ({
+					itemID,
+					clientHandle: clientHandle++,
+				}));
+				const addedItems = await runTimedStep(
+					node, 'addItems', () => node.opcItemMgr.add(itemsList), timeout,
+				);
+				for (let i = 0; i < addedItems.length; i++) {
+					const addedItem = addedItems[i];
+					const item = itemsList[i];
+					if (addedItem[0] !== 0) {
+						node.warn(`Error adding item '${item.itemID}'`);
+					} else {
+						serverHandles.push(addedItem[1].serverHandle);
+						clientHandles[item.clientHandle] = item.itemID;
 					}
-				}, timeout, 'OPCDA initialization');
+				}
 
 				node.isConnected = true;
 				node.updateStatus('ready');

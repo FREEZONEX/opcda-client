@@ -6,9 +6,10 @@ module.exports = function(RED) {
 		cleanupStep,
 		createReconnectController,
 		forceCleanup,
-		isTransportFatal,
-		messageOf,
-		withTimeout,
+	isTransportFatal,
+	messageOf,
+	runTimedStep,
+	withTimeout,
 	} = require('./lifecycle');
 	
 	const errorCode = {
@@ -148,25 +149,39 @@ module.exports = function(RED) {
 				);
 				node.comSession.setGlobalSocketTimeout(timeout);
 
-				await withTimeout(async () => {
-					node.comServer = new ComServer(
-						new Clsid(server.config.clsid),
-						server.config.address,
-						node.comSession,
-					);
-					node._diagStep = 'comServer.init';
-					await node.comServer.init();
-					node._diagStep = 'comServer.createInstance';
-					node.comObject = await node.comServer.createInstance();
-					node._diagStep = 'opcServer.init';
-					node.opcServer = new OPCServer();
-					await node.opcServer.init(node.comObject);
-					serverHandles = {};
-					clientHandle = 0;
-					node.opcGroup = await node.opcServer.addGroup(config.id, null);
-					node.opcItemMgr = await node.opcGroup.getItemManager();
-					node.opcSyncIO = await node.opcGroup.getSyncIO();
-				}, timeout, 'OPCDA write initialization');
+				node.comServer = new ComServer(
+					new Clsid(server.config.clsid),
+					server.config.address,
+					node.comSession,
+				);
+				await runTimedStep(
+					node, 'comServer.init', () => node.comServer.init(), timeout,
+					'OPCDA write initialization',
+				);
+				node.comObject = await runTimedStep(
+					node, 'comServer.createInstance',
+					() => node.comServer.createInstance(), timeout,
+					'OPCDA write initialization',
+				);
+				node.opcServer = new OPCServer();
+				await runTimedStep(
+					node, 'opcServer.init', () => node.opcServer.init(node.comObject), timeout,
+					'OPCDA write initialization',
+				);
+				serverHandles = {};
+				clientHandle = 0;
+				node.opcGroup = await runTimedStep(
+					node, 'addGroup', () => node.opcServer.addGroup(config.id, null), timeout,
+					'OPCDA write initialization',
+				);
+				node.opcItemMgr = await runTimedStep(
+					node, 'getItemManager', () => node.opcGroup.getItemManager(), timeout,
+					'OPCDA write initialization',
+				);
+				node.opcSyncIO = await runTimedStep(
+					node, 'getSyncIO', () => node.opcGroup.getSyncIO(), timeout,
+					'OPCDA write initialization',
+				);
 
 				node.isConnected = true;
 				node.updateStatus('ready');

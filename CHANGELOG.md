@@ -2,6 +2,16 @@
 
 This file records implementation, compatibility, and connection lifecycle changes. See [README.md](README.md) for installation and node usage.
 
+## 1.0.34 - 2026-08-10
+
+### Fixed
+
+- Replaced the single timeout covering the complete Read/Write initialization sequence with an independent timeout for each major initialization stage.
+- Initialization timeout messages now identify the exact active stage, including `comServer.init`, `createInstance`, `opcServer.init`, `addGroup`, `getItemManager`, `getSyncIO`, and `addItems`.
+- Classified `0x800700A4` (`ERROR_MAX_THRDS_REACHED`) as a remote DCOM resource error alongside `0x1c00001b`. `0x80070024` (`ERROR_SHARING_BUFFER_EXCEEDED`) is also treated as resource exhaustion.
+- Added readable error-code names to reconnect logs.
+- Resource cooldown now requires consecutive resource errors; an unrelated transient failure resets the pre-cooldown resource streak.
+
 ## 1.0.33 - 2026-08-05
 
 ### Documentation

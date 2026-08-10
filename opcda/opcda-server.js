@@ -34,7 +34,9 @@ module.exports = function(RED) {
 		0x00000061 : "Clsid syntax is invalid",
 		0x80004002 : "No such interface (E_NOINTERFACE).",
 		2147500034 : "No such interface (E_NOINTERFACE).",
-		0x1C00001B : "RPC server out of memory/resources (nca_s_fault_remote_no_memory)."
+		0x1C00001B : "RPC server out of memory/resources (nca_s_fault_remote_no_memory).",
+		0x80070024 : "Windows/DCOM resource limit reached (ERROR_SHARING_BUFFER_EXCEEDED).",
+		0x800700A4 : "Windows/DCOM thread limit reached (ERROR_MAX_THRDS_REACHED)."
 	};
 
 	function formatBrowseError(err) {

@@ -45,10 +45,10 @@ docker restart <node-red-container>
 The client `.tgz` contains all required runtime dependencies. Only this one file needs to be copied to an offline customer server.
 
 ```bash
-docker cp tier0-node-red-contrib-opcda-client-1.0.33.tgz <node-red-container>:/data/
+docker cp tier0-node-red-contrib-opcda-client-1.0.34.tgz <node-red-container>:/data/
 docker exec -it <node-red-container> sh
 cd /data
-npm install --offline --no-audit --no-fund ./tier0-node-red-contrib-opcda-client-1.0.33.tgz
+npm install --offline --no-audit --no-fund ./tier0-node-red-contrib-opcda-client-1.0.34.tgz
 exit
 docker restart <node-red-container>
 ```
@@ -81,7 +81,7 @@ If online installation reports `getaddrinfo EAI_AGAIN registry.npmjs.org`, the c
 | User Name | Account with DCOM and OPC server access |
 | Password | Password for the account |
 | ClsId | Class ID of the OPC DA server |
-| Timeout | Connection and operation timeout in milliseconds |
+| Timeout | Timeout for each connection/initialization stage and read/write operation, in milliseconds |
 | Reconnect cooldown | Retry cooldown in minutes after the server reports resource exhaustion; default: 5 minutes |
 
 For a slow server or a large item list, start with a Timeout of `15000` or `20000` ms.
@@ -216,9 +216,9 @@ Output:
 - Verify that the CLSID belongs to the target OPC DA server.
 - Grant `node-opc-da.list` when Node-RED permission control is enabled.
 
-### `HRESULT 0x1c00001b (469762075)`
+### `HRESULT 0x1c00001b (469762075)` or `0x800700A4`
 
-Check whether the OPC server has reached its client, Session, Group, COM object, memory, or handle limits. Also check whether other collectors are connected to the same server. The node displays `Resource cooldown` and automatically retries after the configured interval.
+Check whether the OPC server has reached its client, Session, Group, COM object, memory, or handle limits. Also check whether other collectors are connected to the same server. Three consecutive resource errors enter `Resource cooldown`; the node automatically makes one new connection attempt after the configured interval.
 
 ### `Received unexpected PDU from server`, connection timeout, or connection closed
 
